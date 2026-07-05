@@ -49,6 +49,27 @@ export interface Supplier {
   material: string;
 }
 
+export type FileCategory = "render" | "receipt" | "document" | "other";
+
+export const FILE_CATEGORIES: { value: FileCategory; label: string }[] = [
+  { value: "render", label: "Render" },
+  { value: "receipt", label: "Payment receipt" },
+  { value: "document", label: "Document" },
+  { value: "other", label: "Other" },
+];
+
+export interface ProjectFile {
+  id: string;
+  name: string;
+  path: string;
+  mime?: string;
+  size: number;
+  category: FileCategory;
+  uploadedBy: string;
+  createdAt: string;
+  url?: string; // short-lived signed URL
+}
+
 export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
 
 export interface QuoteItem {
@@ -102,6 +123,8 @@ export interface Project {
   approvedAt?: string;
   // Quotations
   quotes: Quote[];
+  // Attached files (renders, receipts, docs)
+  files: ProjectFile[];
 }
 
 export interface Client {

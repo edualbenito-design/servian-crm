@@ -18,6 +18,7 @@ import {
 } from "@/lib/data";
 import { updateClient, createProject, updateProject, addNote, addProjectNote, setProjectApproval } from "@/app/actions";
 import { QuotesSection } from "./QuotesSection";
+import { FilesSection } from "./FilesSection";
 
 // ─── form types ───────────────────────────────────────────────────────────────
 
@@ -736,6 +737,13 @@ function ProjectCard({
             initialQuotes={project.quotes}
           />
 
+          {/* Files */}
+          <FilesSection
+            clientId={clientId}
+            projectId={project.id}
+            initialFiles={project.files}
+          />
+
           {/* History */}
           <div className="mt-6 border-t border-(--border) pt-4">
             <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest mb-3">
@@ -924,6 +932,7 @@ export function ClientDetail({
         suppliers: parseSuppliers(pf.suppliers),
         approved: false,
         quotes: [],
+        files: [],
       };
       setClient((prev) => ({ ...prev, projects: [...prev.projects, optimistic] }));
       setProjectModal(null);

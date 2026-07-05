@@ -19,8 +19,11 @@
 - **Dashboard de inteligencia** (KPIs, leads por mes, funnel de pipeline, fuente de leads, rendimiento por comercial, duración media por tamaño) — solo managers
 
 ## 🎯 En curso
-- [ ] **Cotizaciones**: crear por proyecto, líneas + 5% VAT, descargar PDF, seguimiento de estado (borrador/enviada/aceptada/rechazada)
-- [ ] **Archivos por proyecto**: subir/guardar renders, comprobantes de pago, documentos (Supabase Storage)
+- [x] **Cotizaciones**: crear por proyecto, líneas + 5% VAT, PDF imprimible, seguimiento de estado
+- [x] **Tipo de renovación** (campo texto libre en cliente)
+- [x] **Documentos de empresa** (managers): subir/descargar/borrar (Supabase Storage, bucket company-docs privado)
+- [ ] Integrar logo + formato fijo en el PDF de cotización (pendiente de recibir el logo)
+- [ ] **Archivos por proyecto**: renders, comprobantes de pago por proyecto (Supabase Storage)
 - Nota: pulido de móvil PAUSADO a propósito hasta rematar funcionalidad del CRM (versión móvil actual ya usable)
 
 ## ✅ Hecho (despliegue)

@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
 
 type DbQuote = {
   id: string;
@@ -112,6 +112,7 @@ function toProject(
     approvedBy: p.approved_by ?? undefined,
     approvedAt: p.approved_at ?? undefined,
     quotes,
+    files: [],
   };
 }
 
@@ -204,7 +205,58 @@ export async function getClient(id: string): Promise<Client | null> {
   }
 
   if (error) return null;
-  return toClient(data as DbClient);
+  const client = toClient(data as DbClient);
+  await attachProjectFiles(client);
+  return client;
+}
+
+// Loads project files for a client and attaches them (with signed URLs) to each
+// project. Fails soft if the table isn't there yet.
+async function attachProjectFiles(client: Client): Promise<void> {
+  const db = serverClient();
+  const { data, error } = await db
+    .from("project_files")
+    .select("*")
+    .eq("client_id", client.id)
+    .order("created_at", { ascending: false });
+  if (error || !data) return;
+
+  const rows = data as {
+    id: string;
+    project_id: string;
+    name: string;
+    path: string;
+    mime: string | null;
+    size: number;
+    category: string;
+    uploaded_by: string;
+    created_at: string;
+  }[];
+
+  const byProject = new Map<string, ProjectFile[]>();
+  for (const r of rows) {
+    const { data: signed } = await db.storage
+      .from("project-files")
+      .createSignedUrl(r.path, 3600);
+    const file: ProjectFile = {
+      id: r.id,
+      name: r.name,
+      path: r.path,
+      mime: r.mime ?? undefined,
+      size: r.size,
+      category: r.category as FileCategory,
+      uploadedBy: r.uploaded_by,
+      createdAt: r.created_at,
+      url: signed?.signedUrl,
+    };
+    const list = byProject.get(r.project_id) ?? [];
+    list.push(file);
+    byProject.set(r.project_id, list);
+  }
+
+  for (const p of client.projects) {
+    p.files = byProject.get(p.id) ?? [];
+  }
 }
 
 // ─── Company documents ─────────────────────────────────────────────────────────

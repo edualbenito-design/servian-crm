@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -174,6 +174,7 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
     suppliers: data.suppliers ?? [],
     approved: false,
     quotes: [],
+    files: [],
   };
 }
 
@@ -476,4 +477,96 @@ export async function deleteDocument(
   const { error } = await db.from("documents").delete().eq("id", documentId);
   if (error) throw new Error(error.message);
   revalidatePath("/documents");
+}
+
+// ─── Project files (renders, receipts, documents) ───────────────────────────────
+
+const PROJECT_FILES_BUCKET = "project-files";
+
+// A commercial may only touch files for their own clients; managers, any.
+async function assertCanAccessClient(clientId: string): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not authenticated.");
+  if (profile.isManager) return;
+  const db = serverClient();
+  const { data } = await db
+    .from("clients")
+    .select("assigned_to")
+    .eq("id", clientId)
+    .single();
+  if (!data || data.assigned_to !== profile.name) {
+    throw new Error("Not allowed for this client.");
+  }
+}
+
+export async function uploadProjectFile(
+  formData: FormData
+): Promise<ProjectFile> {
+  const clientId = String(formData.get("clientId") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const category = String(formData.get("category") ?? "other") as FileCategory;
+  await assertCanAccessClient(clientId);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("No file provided.");
+  }
+
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${projectId}/${Date.now()}-${safeName}`;
+
+  const { error: upErr } = await db.storage
+    .from(PROJECT_FILES_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (upErr) throw new Error(upErr.message);
+
+  const { data, error: dbErr } = await db
+    .from("project_files")
+    .insert({
+      project_id: projectId,
+      client_id: clientId,
+      name: file.name,
+      path,
+      mime: file.type || null,
+      size: file.size,
+      category,
+      uploaded_by: profile?.name ?? "",
+    })
+    .select()
+    .single();
+  if (dbErr) throw new Error(dbErr.message);
+
+  await logActivity(clientId, "note", `File uploaded: ${file.name}`, projectId);
+  revalidatePath(`/clients/${clientId}`);
+
+  const { data: signed } = await db.storage
+    .from(PROJECT_FILES_BUCKET)
+    .createSignedUrl(path, 3600);
+
+  return {
+    id: data.id,
+    name: data.name,
+    path: data.path,
+    mime: data.mime ?? undefined,
+    size: data.size,
+    category: data.category as FileCategory,
+    uploadedBy: data.uploaded_by,
+    createdAt: data.created_at,
+    url: signed?.signedUrl,
+  };
+}
+
+export async function deleteProjectFile(
+  clientId: string,
+  fileId: string,
+  path: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  await db.storage.from(PROJECT_FILES_BUCKET).remove([path]);
+  const { error } = await db.from("project_files").delete().eq("id", fileId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
 }
