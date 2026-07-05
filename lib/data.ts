@@ -49,6 +49,39 @@ export interface Supplier {
   material: string;
 }
 
+export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
+
+export interface QuoteItem {
+  description: string;
+  qty: number;
+  unitPrice: number;
+}
+
+export interface Quote {
+  id: string;
+  projectId: string;
+  clientId: string;
+  number: string;
+  status: QuoteStatus;
+  issueDate: string; // YYYY-MM-DD
+  validUntil?: string;
+  vatRate: number; // percent, e.g. 5
+  notes?: string;
+  items: QuoteItem[];
+  sentAt?: string;
+  createdAt: string;
+}
+
+// Totals helper (kept here so UI and PDF agree).
+export function quoteTotals(q: { items: QuoteItem[]; vatRate: number }) {
+  const subtotal = q.items.reduce(
+    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0),
+    0
+  );
+  const vat = subtotal * ((Number(q.vatRate) || 0) / 100);
+  return { subtotal, vat, total: subtotal + vat };
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -67,6 +100,8 @@ export interface Project {
   approved: boolean;
   approvedBy?: string;
   approvedAt?: string;
+  // Quotations
+  quotes: Quote[];
 }
 
 export interface Client {

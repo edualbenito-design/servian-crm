@@ -1,5 +1,37 @@
 import { serverClient } from "./supabase/server";
-import type { Client, Project, Activity, ActivityType, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
+
+type DbQuote = {
+  id: string;
+  project_id: string;
+  client_id: string;
+  number: string;
+  status: string;
+  issue_date: string;
+  valid_until: string | null;
+  vat_rate: number;
+  notes: string | null;
+  items: QuoteItem[] | null;
+  sent_at: string | null;
+  created_at: string;
+};
+
+function toQuote(q: DbQuote): Quote {
+  return {
+    id: q.id,
+    projectId: q.project_id,
+    clientId: q.client_id,
+    number: q.number,
+    status: q.status as QuoteStatus,
+    issueDate: q.issue_date,
+    validUntil: q.valid_until ?? undefined,
+    vatRate: Number(q.vat_rate) || 0,
+    notes: q.notes ?? undefined,
+    items: q.items ?? [],
+    sentAt: q.sent_at ?? undefined,
+    createdAt: q.created_at,
+  };
+}
 
 type DbActivity = {
   id: string;
@@ -54,9 +86,14 @@ type DbClient = {
   created_at: string;
   projects: DbProject[];
   activities?: DbActivity[];
+  quotes?: DbQuote[];
 };
 
-function toProject(p: DbProject, activities: Activity[] = []): Project {
+function toProject(
+  p: DbProject,
+  activities: Activity[] = [],
+  quotes: Quote[] = []
+): Project {
   return {
     id: p.id,
     name: p.name,
@@ -73,6 +110,7 @@ function toProject(p: DbProject, activities: Activity[] = []): Project {
     approved: p.approved ?? false,
     approvedBy: p.approved_by ?? undefined,
     approvedAt: p.approved_at ?? undefined,
+    quotes,
   };
 }
 
@@ -88,6 +126,14 @@ function toClient(c: DbClient): Client {
     byProject.set(a.projectId, list);
   }
 
+  // Group quotes by project.
+  const quotesByProject = new Map<string, Quote[]>();
+  for (const q of (c.quotes ?? []).map(toQuote)) {
+    const list = quotesByProject.get(q.projectId) ?? [];
+    list.push(q);
+    quotesByProject.set(q.projectId, list);
+  }
+
   return {
     id: c.id,
     name: c.name,
@@ -101,7 +147,9 @@ function toClient(c: DbClient): Client {
     capturedAt: c.captured_at ?? undefined,
     createdAt: c.created_at ?? undefined,
     notes: c.notes ?? undefined,
-    projects: c.projects.map((p) => toProject(p, byProject.get(p.id) ?? [])),
+    projects: c.projects.map((p) =>
+      toProject(p, byProject.get(p.id) ?? [], quotesByProject.get(p.id) ?? [])
+    ),
     activities: clientActivities,
   };
 }
@@ -122,14 +170,36 @@ export async function getClients(assignedTo?: string): Promise<Client[]> {
   return (data as DbClient[]).map(toClient);
 }
 
-export async function getClient(id: string): Promise<Client | null> {
+export async function getQuote(id: string): Promise<Quote | null> {
   const db = serverClient();
   const { data, error } = await db
+    .from("quotes")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return null;
+  return toQuote(data as DbQuote);
+}
+
+export async function getClient(id: string): Promise<Client | null> {
+  const db = serverClient();
+  // Prefer the full select (with quotes). If the quotes table isn't there yet,
+  // fall back gracefully so client pages never break.
+  let { data, error } = await db
     .from("clients")
-    .select("*, projects(*), activities(*)")
+    .select("*, projects(*), activities(*), quotes(*)")
     .eq("id", id)
     .order("created_at", { foreignTable: "activities", ascending: false })
     .single();
+
+  if (error) {
+    ({ data, error } = await db
+      .from("clients")
+      .select("*, projects(*), activities(*)")
+      .eq("id", id)
+      .order("created_at", { foreignTable: "activities", ascending: false })
+      .single());
+  }
 
   if (error) return null;
   return toClient(data as DbClient);

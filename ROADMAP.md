@@ -18,8 +18,16 @@
 - **Visto bueno de manager por proyecto** (aprobar/revocar, con quién y cuándo)
 - **Dashboard de inteligencia** (KPIs, leads por mes, funnel de pipeline, fuente de leads, rendimiento por comercial, duración media por tamaño) — solo managers
 
+## 🎯 En curso
+- [ ] **Cotizaciones**: crear por proyecto, líneas + 5% VAT, descargar PDF, seguimiento de estado (borrador/enviada/aceptada/rechazada)
+- [ ] **Archivos por proyecto**: subir/guardar renders, comprobantes de pago, documentos (Supabase Storage)
+- Nota: pulido de móvil PAUSADO a propósito hasta rematar funcionalidad del CRM (versión móvil actual ya usable)
+
+## ✅ Hecho (despliegue)
+- [x] **Desplegado en Vercel**: servian-crm.vercel.app (público, protegido por login)
+- [x] Cuentas manager: Eduardo + Sergio
+
 ## ⏳ Pendiente / siguientes pasos
-- [ ] **Desplegar a URL pública (Vercel)** — siguiente hito
 - [ ] Crear las cuentas reales cuando haya emails: 4 comerciales (rol sales, full_name exacto) + Sergio (manager)
 - [ ] Estructura para leads de RRSS (campos de campaña/UTM) + pool genérico → asignación (manual ahora, round-robin igualitario futuro)
 - [ ] Adjuntar archivos/fotos por proyecto (presupuestos, planos, fotos del sitio)

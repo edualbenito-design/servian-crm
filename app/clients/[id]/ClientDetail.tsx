@@ -17,6 +17,7 @@ import {
   type Salesperson,
 } from "@/lib/data";
 import { updateClient, createProject, updateProject, addNote, addProjectNote, setProjectApproval } from "@/app/actions";
+import { QuotesSection } from "./QuotesSection";
 
 // ─── form types ───────────────────────────────────────────────────────────────
 
@@ -520,12 +521,14 @@ function NoteBox({
 // (description, dates, team, suppliers, history). "Edit" is only for changing.
 function ProjectCard({
   project,
+  clientId,
   isManager,
   onEdit,
   onAddNote,
   onToggleApproval,
 }: {
   project: Project;
+  clientId: string;
   isManager: boolean;
   onEdit: () => void;
   onAddNote: (text: string) => void;
@@ -724,6 +727,13 @@ function ProjectCard({
             </div>
           </div>
 
+          {/* Quotations */}
+          <QuotesSection
+            clientId={clientId}
+            projectId={project.id}
+            initialQuotes={project.quotes}
+          />
+
           {/* History */}
           <div className="mt-6 border-t border-(--border) pt-4">
             <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest mb-3">
@@ -910,6 +920,7 @@ export function ClientDetail({
         teamMembers: parseLines(pf.teamMembers),
         suppliers: parseSuppliers(pf.suppliers),
         approved: false,
+        quotes: [],
       };
       setClient((prev) => ({ ...prev, projects: [...prev.projects, optimistic] }));
       setProjectModal(null);
@@ -1188,6 +1199,7 @@ export function ClientDetail({
                   <ProjectCard
                     key={project.id}
                     project={project}
+                    clientId={client.id}
                     isManager={isManager}
                     onEdit={() => openEditProject(project)}
                     onAddNote={(text) => submitProjectNote(project.id, text)}

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -170,6 +170,7 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
     teamMembers: data.team_members ?? [],
     suppliers: data.suppliers ?? [],
     approved: false,
+    quotes: [],
   };
 }
 
@@ -289,4 +290,136 @@ export async function setProjectApproval(
     approvedBy: approvedBy ?? undefined,
     approvedAt: approvedAt ?? undefined,
   };
+}
+
+// ─── Quotations ────────────────────────────────────────────────────────────────
+
+type QuoteFields = {
+  issueDate: string;
+  validUntil: string;
+  vatRate: number;
+  notes: string;
+  items: QuoteItem[];
+};
+
+function cleanItems(items: QuoteItem[]): QuoteItem[] {
+  return items
+    .map((it) => ({
+      description: (it.description ?? "").trim(),
+      qty: Math.max(0, Number(it.qty) || 0),
+      unitPrice: Math.max(0, Number(it.unitPrice) || 0),
+    }))
+    .filter((it) => it.description || it.qty || it.unitPrice);
+}
+
+// Generates the next quote number for a client's project, e.g. Q-2026-0007.
+async function nextQuoteNumber(): Promise<string> {
+  const db = serverClient();
+  const year = new Date().getFullYear();
+  const { count } = await db
+    .from("quotes")
+    .select("id", { count: "exact", head: true });
+  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  return `Q-${year}-${seq}`;
+}
+
+export async function createQuote(
+  clientId: string,
+  projectId: string,
+  fields: QuoteFields
+): Promise<Quote> {
+  const db = serverClient();
+  const number = await nextQuoteNumber();
+  const { data, error } = await db
+    .from("quotes")
+    .insert({
+      project_id: projectId,
+      client_id: clientId,
+      number,
+      status: "draft",
+      issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
+      valid_until: fields.validUntil || null,
+      vat_rate: fields.vatRate,
+      notes: fields.notes.trim() || null,
+      items: cleanItems(fields.items),
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  await logActivity(clientId, "note", `Quote ${number} created`, projectId);
+  revalidatePath(`/clients/${clientId}`);
+
+  return {
+    id: data.id,
+    projectId,
+    clientId,
+    number: data.number,
+    status: data.status as QuoteStatus,
+    issueDate: data.issue_date,
+    validUntil: data.valid_until ?? undefined,
+    vatRate: Number(data.vat_rate) || 0,
+    notes: data.notes ?? undefined,
+    items: data.items ?? [],
+    sentAt: data.sent_at ?? undefined,
+    createdAt: data.created_at,
+  };
+}
+
+export async function updateQuote(
+  clientId: string,
+  quoteId: string,
+  fields: QuoteFields
+): Promise<void> {
+  const db = serverClient();
+  const { error } = await db
+    .from("quotes")
+    .update({
+      issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
+      valid_until: fields.validUntil || null,
+      vat_rate: fields.vatRate,
+      notes: fields.notes.trim() || null,
+      items: cleanItems(fields.items),
+    })
+    .eq("id", quoteId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+export async function setQuoteStatus(
+  clientId: string,
+  projectId: string,
+  quoteId: string,
+  status: QuoteStatus
+): Promise<{ sentAt?: string }> {
+  const db = serverClient();
+  const sentAt =
+    status === "sent" ? new Date().toISOString() : null;
+  const patch: Record<string, unknown> = { status };
+  if (status === "sent") patch.sent_at = sentAt;
+
+  const { error } = await db.from("quotes").update(patch).eq("id", quoteId);
+  if (error) throw new Error(error.message);
+
+  const label =
+    status === "sent"
+      ? "marked as sent"
+      : status === "accepted"
+        ? "accepted by client"
+        : status === "rejected"
+          ? "rejected by client"
+          : "set to draft";
+  await logActivity(clientId, "note", `Quote ${label}`, projectId);
+  revalidatePath(`/clients/${clientId}`);
+  return { sentAt: sentAt ?? undefined };
+}
+
+export async function deleteQuote(
+  clientId: string,
+  quoteId: string
+): Promise<void> {
+  const db = serverClient();
+  const { error } = await db.from("quotes").delete().eq("id", quoteId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
 }
