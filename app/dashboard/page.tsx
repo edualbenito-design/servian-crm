@@ -69,7 +69,7 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
           Dashboard
@@ -159,7 +159,7 @@ export default async function DashboardPage() {
         <div className="space-y-2">
           {funnel.map((f) => (
             <div key={f.stage} className="flex items-center gap-3">
-              <span className="w-40 shrink-0 text-xs text-(--text-secondary) truncate">
+              <span className="w-24 sm:w-40 shrink-0 text-xs text-(--text-secondary) truncate">
                 {f.stage}. {f.label}
               </span>
               <div className="flex-1 h-5 rounded bg-(--surface) overflow-hidden">
@@ -171,7 +171,7 @@ export default async function DashboardPage() {
               <span className="w-8 shrink-0 text-xs font-semibold text-(--text-secondary) text-right">
                 {f.count}
               </span>
-              <span className="w-24 shrink-0 text-xs font-mono text-(--text-muted) text-right">
+              <span className="hidden sm:block w-24 shrink-0 text-xs font-mono text-(--text-muted) text-right">
                 {money(f.value)}
               </span>
             </div>

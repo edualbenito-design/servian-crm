@@ -60,7 +60,7 @@ export default async function TeamPage() {
   }).filter((m) => m.person !== "Unassigned" || m.stats.total > 0);
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
           Team

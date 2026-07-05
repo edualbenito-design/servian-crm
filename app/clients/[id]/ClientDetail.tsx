@@ -955,7 +955,7 @@ export function ClientDetail({
   // ── render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       {/* Back */}
       <Link
         href="/"
@@ -977,21 +977,21 @@ export function ClientDetail({
       </Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-5">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-xl font-bold text-white select-none">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+        <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-lg sm:text-xl font-bold text-white select-none shrink-0">
             {initials}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-(--text-primary) tracking-tight truncate">
               {client.name}
             </h1>
-            <p className="mt-0.5 text-sm text-(--text-secondary)">
+            <p className="mt-0.5 text-sm text-(--text-secondary) truncate">
               {client.location}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={openClientModal}
@@ -1012,9 +1012,9 @@ export function ClientDetail({
       </div>
 
       {/* Body */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Left column ─────────────────────────────────────────────────── */}
-        <div className="col-span-1 space-y-4">
+        <div className="lg:col-span-1 space-y-4">
           {/* Contact */}
           <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-4">
             <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
@@ -1160,7 +1160,7 @@ export function ClientDetail({
         </div>
 
         {/* ── Right column: projects ───────────────────────────────────────── */}
-        <div className="col-span-2">
+        <div className="lg:col-span-2">
           <div className="bg-(--card) border border-(--border) rounded-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-(--border) flex items-center justify-between">
               <h2 className="text-sm font-semibold text-(--text-primary)">

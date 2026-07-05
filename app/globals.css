@@ -53,6 +53,15 @@ body {
   border-color: var(--border);
 }
 
+/* Hide scrollbar (used on the mobile nav) while keeping scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Native input overrides */
 input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;

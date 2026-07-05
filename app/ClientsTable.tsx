@@ -216,22 +216,86 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div>
           {filtered.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <p className="text-sm text-(--text-muted)">
-                No clients assigned to{" "}
-                <span className="text-(--text-secondary)">{filterBy}</span>.
+                No clients found for this filter.
               </p>
               <button
                 type="button"
-                onClick={() => setFilterBy("")}
+                onClick={() => {
+                  setFilterBy("");
+                  setMonthBy("");
+                }}
                 className="mt-2 text-sm text-(--accent) hover:underline underline-offset-2"
               >
-                Clear filter
+                Clear filters
               </button>
             </div>
           ) : (
+            <>
+            {/* Mobile: card list */}
+            <div className="sm:hidden divide-y divide-(--border)">
+              {filtered.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => router.push(`/clients/${client.id}`)}
+                  className="w-full text-left px-4 py-4 flex flex-col gap-2 active:bg-(--surface)/60 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-sm font-bold text-white shrink-0 select-none">
+                      {client.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .slice(0, 2)
+                        .join("")}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-(--text-primary) truncate">
+                        {client.name}
+                      </p>
+                      <p className="text-xs text-(--text-muted) truncate">
+                        {client.phone} · {client.location}
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-(--accent) shrink-0">
+                      {formatCurrency(clientBudget(client))}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap pl-12">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${propertyTypeColor[client.propertyType]}`}
+                    >
+                      {propertyTypeLabel[client.propertyType]}
+                    </span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${leadSourceColor[client.leadSource]}`}
+                    >
+                      {leadSourceLabel[client.leadSource]}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-(--surface) border border-(--border) text-(--text-secondary)">
+                      <span
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold ${salesAvatarColor[client.assignedTo]}`}
+                      >
+                        {salesInitials(client.assignedTo)}
+                      </span>
+                      {client.assignedTo}
+                    </span>
+                    {activeProjectCount(client) > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                        {activeProjectCount(client)} active
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-(--border) bg-(--surface)">
@@ -391,6 +455,8 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                 ))}
               </tbody>
             </table>
+            </div>
+            </>
           )}
         </div>
       </div>

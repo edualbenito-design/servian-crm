@@ -10,9 +10,9 @@ export default async function ClientsPage() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       {/* Page header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
             Clients

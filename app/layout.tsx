@@ -53,8 +53,8 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-(--background) text-(--text-primary) antialiased">
         {profile && (
           <header className="border-b border-(--border) bg-(--surface)">
-            <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 <div className="w-8 h-8 rounded bg-(--accent) flex items-center justify-center">
                   <svg
                     width="18"
@@ -72,17 +72,17 @@ export default async function RootLayout({
                   </svg>
                 </div>
                 <div>
-                  <span className="font-semibold text-(--text-primary) tracking-tight">
+                  <span className="hidden sm:inline font-semibold text-(--text-primary) tracking-tight">
                     Servian Contracting
                   </span>
-                  <span className="ml-2 text-xs font-medium text-(--text-muted) uppercase tracking-widest">
+                  <span className="sm:ml-2 text-xs font-medium text-(--text-muted) uppercase tracking-widest">
                     CRM
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 <NavLinks isManager={profile.isManager} />
-                <div className="w-px h-5 bg-(--border) mx-1" />
+                <div className="hidden sm:block w-px h-5 bg-(--border) mx-1" />
                 <ThemeToggle />
 
                 {/* User chip */}
