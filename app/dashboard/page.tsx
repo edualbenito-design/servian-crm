@@ -87,7 +87,7 @@ export default async function DashboardPage() {
         <Kpi label="Approved Projects" value={String(kpis.approvedProjects)} />
         <Kpi label="Pipeline Value" value={money(kpis.pipelineValue)} />
         <Kpi label="Won Value" value={money(kpis.wonValue)} />
-        <Kpi label="Completed Projects" value={String(kpis.completedProjects)} />
+        <Kpi label="Follow-ups Due" value={String(kpis.followUpsDue)} />
         <Kpi
           label="Win Rate"
           value={`${

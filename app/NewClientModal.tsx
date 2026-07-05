@@ -26,6 +26,7 @@ type Form = {
   assignedTo: Salesperson;
   capturedBy: string;
   capturedAt: string;
+  nextFollowUp: string;
   notes: string;
 };
 
@@ -41,6 +42,7 @@ function emptyForm(): Form {
     assignedTo: "Unassigned",
     capturedBy: "",
     capturedAt: new Date().toISOString().slice(0, 10),
+    nextFollowUp: "",
     notes: "",
   };
 }
@@ -202,9 +204,15 @@ export function NewClientButton() {
                 </div>
               </div>
 
-              <div>
-                <label className={LABEL}>Captured On</label>
-                <input type="date" value={f.capturedAt} onChange={(e) => setF((p) => ({ ...p, capturedAt: e.target.value }))} className={INPUT} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={LABEL}>Captured On</label>
+                  <input type="date" value={f.capturedAt} onChange={(e) => setF((p) => ({ ...p, capturedAt: e.target.value }))} className={INPUT} />
+                </div>
+                <div>
+                  <label className={LABEL}>Next Follow-up</label>
+                  <input type="date" value={f.nextFollowUp} onChange={(e) => setF((p) => ({ ...p, nextFollowUp: e.target.value }))} className={INPUT} />
+                </div>
               </div>
 
               <div>

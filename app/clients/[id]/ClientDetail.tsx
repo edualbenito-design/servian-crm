@@ -6,6 +6,7 @@ import {
   PIPELINE_STAGES,
   SALESPEOPLE,
   CAPTURERS,
+  followUpState,
   type Client,
   type Project,
   type Activity,
@@ -33,6 +34,7 @@ type ClientForm = {
   assignedTo: Salesperson;
   capturedBy: string;
   capturedAt: string;
+  nextFollowUp: string;
   notes: string;
 };
 
@@ -180,6 +182,7 @@ function toClientForm(c: Client): ClientForm {
     assignedTo: c.assignedTo,
     capturedBy: c.capturedBy ?? "",
     capturedAt: c.capturedAt ?? "",
+    nextFollowUp: c.nextFollowUp ?? "",
     notes: c.notes ?? "",
   };
 }
@@ -894,6 +897,7 @@ export function ClientDetail({
       assignedTo: cf.assignedTo,
       capturedBy: (cf.capturedBy || undefined) as Client["capturedBy"],
       capturedAt: cf.capturedAt || undefined,
+      nextFollowUp: cf.nextFollowUp || undefined,
       notes: cf.notes.trim() || undefined,
     }));
     setClientModalOpen(false);
@@ -1177,6 +1181,28 @@ export function ClientDetail({
                   {client.capturedAt ? formatDate(client.capturedAt) : "—"}
                 </span>
               </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-(--text-muted) shrink-0">
+                  Next Follow-up
+                </span>
+                {client.nextFollowUp ? (
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      followUpState(client.nextFollowUp) === "overdue"
+                        ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                        : followUpState(client.nextFollowUp) === "today"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                          : "bg-(--surface) border border-(--border) text-(--text-secondary)"
+                    }`}
+                  >
+                    {formatDate(client.nextFollowUp)}
+                    {followUpState(client.nextFollowUp) === "overdue" && " · overdue"}
+                    {followUpState(client.nextFollowUp) === "today" && " · today"}
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-(--text-muted)">—</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1424,16 +1450,28 @@ export function ClientDetail({
               </Field>
             </div>
 
-            <Field label="Captured On" optional>
-              <input
-                type="date"
-                value={cf.capturedAt}
-                onChange={(e) =>
-                  setCf((p) => ({ ...p, capturedAt: e.target.value }))
-                }
-                className={INPUT}
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Captured On" optional>
+                <input
+                  type="date"
+                  value={cf.capturedAt}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, capturedAt: e.target.value }))
+                  }
+                  className={INPUT}
+                />
+              </Field>
+              <Field label="Next Follow-up" optional>
+                <input
+                  type="date"
+                  value={cf.nextFollowUp}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, nextFollowUp: e.target.value }))
+                  }
+                  className={INPUT}
+                />
+              </Field>
+            </div>
 
             <Field label="Notes" optional>
               <textarea

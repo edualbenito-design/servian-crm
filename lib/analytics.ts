@@ -1,5 +1,5 @@
 import type { Client, Project, LeadSource, PipelineStage } from "./data";
-import { PIPELINE_STAGES } from "./data";
+import { PIPELINE_STAGES, followUpState } from "./data";
 
 export function monthKey(dateStr?: string): string {
   return dateStr ? dateStr.slice(0, 7) : "";
@@ -26,6 +26,7 @@ export interface Kpis {
   approvedProjects: number;
   pipelineValue: number; // value of not-completed projects
   wonValue: number; // value of completed projects
+  followUpsDue: number; // clients overdue or due today
 }
 
 export function computeKpis(clients: Client[]): Kpis {
@@ -44,6 +45,10 @@ export function computeKpis(clients: Client[]): Kpis {
     wonValue: projects
       .filter((p) => p.status === "completed")
       .reduce((s, p) => s + p.budget, 0),
+    followUpsDue: clients.filter((c) => {
+      const s = followUpState(c.nextFollowUp);
+      return s === "overdue" || s === "today";
+    }).length,
   };
 }
 

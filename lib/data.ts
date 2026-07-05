@@ -93,6 +93,20 @@ export interface Quote {
   createdAt: string;
 }
 
+export type FollowUpState = "overdue" | "today" | "upcoming" | "none";
+
+// Compares a follow-up date to today (local date, ignoring time).
+export function followUpState(dateStr?: string): FollowUpState {
+  if (!dateStr) return "none";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return "none";
+  if (d.getTime() < today.getTime()) return "overdue";
+  if (d.getTime() === today.getTime()) return "today";
+  return "upcoming";
+}
+
 // Totals helper (kept here so UI and PDF agree).
 export function quoteTotals(q: { items: QuoteItem[]; vatRate: number }) {
   const subtotal = q.items.reduce(
@@ -140,6 +154,7 @@ export interface Client {
   capturedBy?: Capturer; // who brought the lead in
   capturedAt?: string; // date the lead was captured (YYYY-MM-DD)
   createdAt?: string; // row creation timestamp (fallback for month grouping)
+  nextFollowUp?: string; // date of the next planned follow-up (YYYY-MM-DD)
   notes?: string;
   projects: Project[];
   activities: Activity[];

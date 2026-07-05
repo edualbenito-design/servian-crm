@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   SALESPEOPLE,
+  followUpState,
   type Client,
   type PropertyType,
   type LeadSource,
@@ -101,6 +102,13 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
   const [filterBy, setFilterBy] = useState<Salesperson | "">("");
   const [monthBy, setMonthBy] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [dueOnly, setDueOnly] = useState(false);
+
+  const isDue = (c: Client) => {
+    const s = followUpState(c.nextFollowUp);
+    return s === "overdue" || s === "today";
+  };
+  const dueCount = clients.filter(isDue).length;
 
   // Month a client belongs to: capture date, or creation date as fallback.
   const clientMonth = (c: Client) => monthKey(c.capturedAt ?? c.createdAt);
@@ -114,6 +122,7 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
   const filtered = clients.filter((c) => {
     if (filterBy && c.assignedTo !== filterBy) return false;
     if (monthBy && clientMonth(c) !== monthBy) return false;
+    if (dueOnly && !isDue(c)) return false;
     if (q) {
       const haystack = `${c.name} ${c.phone} ${c.email} ${c.location} ${c.assignedTo} ${c.renovationType ?? ""}`.toLowerCase();
       if (!haystack.includes(q)) return false;
@@ -191,6 +200,25 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
           </div>
 
           <div className="flex items-center gap-2 sm:order-1">
+            {/* Follow-up due filter */}
+            {dueCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setDueOnly((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  dueOnly
+                    ? "bg-amber-500 text-black"
+                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                }`}
+                title="Clients to follow up (overdue or due today)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+                Due {dueCount}
+              </button>
+            )}
             {/* Month filter */}
             {months.length > 0 && (
               <div className="relative">
@@ -276,8 +304,18 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                         .join("")}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-(--text-primary) truncate">
+                      <p className="font-medium text-(--text-primary) truncate flex items-center gap-1.5">
                         {client.name}
+                        {isDue(client) && (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              followUpState(client.nextFollowUp) === "overdue"
+                                ? "bg-red-500"
+                                : "bg-amber-500"
+                            }`}
+                            title="Follow-up due"
+                          />
+                        )}
                       </p>
                       <p className="text-xs text-(--text-muted) truncate">
                         {client.phone} · {client.location}
@@ -368,8 +406,18 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                             .slice(0, 2)
                             .join("")}
                         </div>
-                        <span className="font-medium text-(--text-primary) whitespace-nowrap">
+                        <span className="font-medium text-(--text-primary) whitespace-nowrap flex items-center gap-1.5">
                           {client.name}
+                          {isDue(client) && (
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                followUpState(client.nextFollowUp) === "overdue"
+                                  ? "bg-red-500"
+                                  : "bg-amber-500"
+                              }`}
+                              title="Follow-up due"
+                            />
+                          )}
                         </span>
                       </div>
                     </td>

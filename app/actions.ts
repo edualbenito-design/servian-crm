@@ -42,6 +42,7 @@ type ClientFields = {
   assignedTo: Salesperson;
   capturedBy: string;
   capturedAt: string;
+  nextFollowUp: string;
   notes: string;
 };
 
@@ -79,22 +80,28 @@ function parseSuppliers(text: string): { name: string; material: string }[] {
 
 export async function updateClient(clientId: string, fields: ClientFields): Promise<void> {
   const db = serverClient();
-  const { error } = await db
+  const base = {
+    name: fields.name.trim() || undefined,
+    phone: fields.phone.trim() || undefined,
+    email: fields.email.trim() || undefined,
+    location: fields.location.trim() || undefined,
+    property_type: fields.propertyType,
+    renovation_type: fields.renovationType.trim() || null,
+    lead_source: fields.leadSource,
+    assigned_to: fields.assignedTo,
+    captured_by: fields.capturedBy.trim() || null,
+    captured_at: fields.capturedAt || null,
+    notes: fields.notes.trim() || null,
+  };
+
+  // Try with next_follow_up; if the column isn't there yet, retry without it.
+  let { error } = await db
     .from("clients")
-    .update({
-      name: fields.name.trim() || undefined,
-      phone: fields.phone.trim() || undefined,
-      email: fields.email.trim() || undefined,
-      location: fields.location.trim() || undefined,
-      property_type: fields.propertyType,
-      renovation_type: fields.renovationType.trim() || null,
-      lead_source: fields.leadSource,
-      assigned_to: fields.assignedTo,
-      captured_by: fields.capturedBy.trim() || null,
-      captured_at: fields.capturedAt || null,
-      notes: fields.notes.trim() || null,
-    })
+    .update({ ...base, next_follow_up: fields.nextFollowUp || null })
     .eq("id", clientId);
+  if (error) {
+    ({ error } = await db.from("clients").update(base).eq("id", clientId));
+  }
 
   if (error) throw new Error(error.message);
   await logActivity(clientId, "client_updated", "Client details updated");
@@ -105,25 +112,34 @@ export async function updateClient(clientId: string, fields: ClientFields): Prom
 // Creates a new client (manual lead entry) and returns its id.
 export async function createClient(fields: ClientFields): Promise<string> {
   const db = serverClient();
-  const { data, error } = await db
+  const base = {
+    name: fields.name.trim() || "New Client",
+    phone: fields.phone.trim() || "",
+    email: fields.email.trim() || "",
+    location: fields.location.trim() || "",
+    property_type: fields.propertyType,
+    renovation_type: fields.renovationType.trim() || null,
+    lead_source: fields.leadSource,
+    assigned_to: fields.assignedTo,
+    captured_by: fields.capturedBy.trim() || null,
+    captured_at: fields.capturedAt || new Date().toISOString().slice(0, 10),
+    notes: fields.notes.trim() || null,
+  };
+
+  let { data, error } = await db
     .from("clients")
-    .insert({
-      name: fields.name.trim() || "New Client",
-      phone: fields.phone.trim() || "",
-      email: fields.email.trim() || "",
-      location: fields.location.trim() || "",
-      property_type: fields.propertyType,
-      renovation_type: fields.renovationType.trim() || null,
-      lead_source: fields.leadSource,
-      assigned_to: fields.assignedTo,
-      captured_by: fields.capturedBy.trim() || null,
-      captured_at: fields.capturedAt || new Date().toISOString().slice(0, 10),
-      notes: fields.notes.trim() || null,
-    })
+    .insert({ ...base, next_follow_up: fields.nextFollowUp || null })
     .select("id")
     .single();
+  if (error) {
+    ({ data, error } = await db
+      .from("clients")
+      .insert(base)
+      .select("id")
+      .single());
+  }
 
-  if (error) throw new Error(error.message);
+  if (error || !data) throw new Error(error?.message ?? "Failed to create client.");
   await logActivity(data.id, "client_updated", "Client created");
   revalidatePath("/");
   return data.id;

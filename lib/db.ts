@@ -83,6 +83,7 @@ type DbClient = {
   assigned_to: string;
   captured_by: string | null;
   captured_at: string | null;
+  next_follow_up: string | null;
   notes: string | null;
   created_at: string;
   projects: DbProject[];
@@ -149,6 +150,7 @@ function toClient(c: DbClient): Client {
     capturedBy: (c.captured_by as Client["capturedBy"]) ?? undefined,
     capturedAt: c.captured_at ?? undefined,
     createdAt: c.created_at ?? undefined,
+    nextFollowUp: c.next_follow_up ?? undefined,
     notes: c.notes ?? undefined,
     projects: c.projects.map((p) =>
       toProject(p, byProject.get(p.id) ?? [], quotesByProject.get(p.id) ?? [])

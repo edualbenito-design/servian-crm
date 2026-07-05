@@ -24,6 +24,9 @@
 - [x] **Documentos de empresa** (managers): subir/descargar/borrar (Supabase Storage, bucket company-docs privado)
 - [x] **Archivos por proyecto**: renders, comprobantes de pago, docs por proyecto (Supabase Storage, bucket project-files)
 - [x] **Contacto rápido**: botones WhatsApp / Llamar / Email en la ficha del cliente
+- [x] **Buscador de clientes** en la lista
+- [x] **Agenda de seguimientos**: campo "próximo seguimiento", avisos vencido/hoy, filtro "Due" en lista, KPI en dashboard
+- [ ] Automatizar aviso diario 9am de seguimientos (necesita cron + email/Resend) — pendiente
 - [ ] Integrar logo + formato fijo en el PDF de cotización (pendiente de recibir el logo)
 - Nota: pulido de móvil PAUSADO a propósito hasta rematar funcionalidad del CRM (versión móvil actual ya usable)
 
