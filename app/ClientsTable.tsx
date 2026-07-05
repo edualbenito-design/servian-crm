@@ -100,6 +100,7 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
   const router = useRouter();
   const [filterBy, setFilterBy] = useState<Salesperson | "">("");
   const [monthBy, setMonthBy] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   // Month a client belongs to: capture date, or creation date as fallback.
   const clientMonth = (c: Client) => monthKey(c.capturedAt ?? c.createdAt);
@@ -109,9 +110,14 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
     new Set(clients.map(clientMonth).filter(Boolean))
   ).sort((a, b) => b.localeCompare(a));
 
+  const q = search.trim().toLowerCase();
   const filtered = clients.filter((c) => {
     if (filterBy && c.assignedTo !== filterBy) return false;
     if (monthBy && clientMonth(c) !== monthBy) return false;
+    if (q) {
+      const haystack = `${c.name} ${c.phone} ${c.email} ${c.location} ${c.assignedTo} ${c.renovationType ?? ""}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     return true;
   });
 
@@ -154,8 +160,8 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
       {/* Client table */}
       <div className="bg-(--card) border border-(--border) rounded-xl overflow-hidden">
         {/* Table toolbar */}
-        <div className="px-6 py-4 border-b border-(--border) flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-(--border) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <h2 className="text-sm font-semibold text-(--text-primary)">
               All Clients
             </h2>
@@ -167,7 +173,24 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative flex-1 sm:max-w-xs sm:order-2">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-(--text-muted)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, phone, location…"
+              className="w-full bg-(--surface) border border-(--border) rounded-lg pl-9 pr-3 py-1.5 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50 focus:ring-1 focus:ring-(--accent)/20 transition-colors"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 sm:order-1">
             {/* Month filter */}
             {months.length > 0 && (
               <div className="relative">
