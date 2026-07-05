@@ -27,6 +27,7 @@ type ClientForm = {
   email: string;
   location: string;
   propertyType: PropertyType;
+  renovationType: string;
   leadSource: LeadSource;
   assignedTo: Salesperson;
   capturedBy: string;
@@ -173,6 +174,7 @@ function toClientForm(c: Client): ClientForm {
     email: c.email,
     location: c.location,
     propertyType: c.propertyType,
+    renovationType: c.renovationType ?? "",
     leadSource: c.leadSource,
     assignedTo: c.assignedTo,
     capturedBy: c.capturedBy ?? "",
@@ -879,6 +881,7 @@ export function ClientDetail({
       email: cf.email.trim() || prev.email,
       location: cf.location.trim() || prev.location,
       propertyType: cf.propertyType,
+      renovationType: cf.renovationType.trim() || undefined,
       leadSource: cf.leadSource,
       assignedTo: cf.assignedTo,
       capturedBy: (cf.capturedBy || undefined) as Client["capturedBy"],
@@ -1076,6 +1079,14 @@ export function ClientDetail({
                 </span>
                 <span className="text-xs font-medium text-(--text-secondary) bg-(--surface) border border-(--border) px-2 py-0.5 rounded-full">
                   {propertyTypeLabel[client.propertyType]}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-(--text-muted) shrink-0">
+                  Renovation
+                </span>
+                <span className="text-xs font-medium text-(--text-secondary) text-right">
+                  {client.renovationType || "—"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -1306,6 +1317,17 @@ export function ClientDetail({
                   <option value="office">Office</option>
                   <option value="other">Other</option>
                 </Sel>
+              </Field>
+              <Field label="Renovation Type" optional>
+                <input
+                  type="text"
+                  value={cf.renovationType}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, renovationType: e.target.value }))
+                  }
+                  className={INPUT}
+                  placeholder="e.g. Kitchen, Bathroom, AC"
+                />
               </Field>
               <Field label="Lead Source">
                 <Sel

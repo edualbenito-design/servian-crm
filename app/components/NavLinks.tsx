@@ -11,6 +11,7 @@ const baseLinks = [
 const managerLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/team", label: "Team" },
+  { href: "/documents", label: "Docs" },
 ];
 
 export function NavLinks({ isManager = false }: { isManager?: boolean }) {

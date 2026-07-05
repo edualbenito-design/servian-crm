@@ -21,6 +21,7 @@ type Form = {
   email: string;
   location: string;
   propertyType: PropertyType;
+  renovationType: string;
   leadSource: LeadSource;
   assignedTo: Salesperson;
   capturedBy: string;
@@ -35,6 +36,7 @@ function emptyForm(): Form {
     email: "",
     location: "",
     propertyType: "villa",
+    renovationType: "",
     leadSource: "referral",
     assignedTo: "Unassigned",
     capturedBy: "",
@@ -159,6 +161,16 @@ export function NewClientButton() {
                     <option value="office">Office</option>
                     <option value="other">Other</option>
                   </Sel>
+                </div>
+                <div>
+                  <label className={LABEL}>Renovation Type</label>
+                  <input
+                    type="text"
+                    value={f.renovationType}
+                    onChange={(e) => setF((p) => ({ ...p, renovationType: e.target.value }))}
+                    className={INPUT}
+                    placeholder="e.g. Kitchen, Bathroom, AC"
+                  />
                 </div>
                 <div>
                   <label className={LABEL}>Lead Source</label>

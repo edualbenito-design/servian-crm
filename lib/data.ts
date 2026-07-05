@@ -111,6 +111,7 @@ export interface Client {
   email: string;
   location: string;
   propertyType: PropertyType;
+  renovationType?: string; // free text: bathroom, kitchen, painting, AC…
   leadSource: LeadSource;
   assignedTo: Salesperson; // managing commercial
   capturedBy?: Capturer; // who brought the lead in

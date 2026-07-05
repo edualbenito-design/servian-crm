@@ -78,6 +78,7 @@ type DbClient = {
   email: string;
   location: string;
   property_type: string;
+  renovation_type: string | null;
   lead_source: string;
   assigned_to: string;
   captured_by: string | null;
@@ -141,6 +142,7 @@ function toClient(c: DbClient): Client {
     email: c.email,
     location: c.location,
     propertyType: c.property_type as PropertyType,
+    renovationType: c.renovation_type ?? undefined,
     leadSource: c.lead_source as LeadSource,
     assignedTo: c.assigned_to as Salesperson,
     capturedBy: (c.captured_by as Client["capturedBy"]) ?? undefined,
@@ -203,4 +205,55 @@ export async function getClient(id: string): Promise<Client | null> {
 
   if (error) return null;
   return toClient(data as DbClient);
+}
+
+// ─── Company documents ─────────────────────────────────────────────────────────
+
+export interface CompanyDocument {
+  id: string;
+  name: string;
+  path: string;
+  mime?: string;
+  size: number;
+  uploadedBy: string;
+  createdAt: string;
+  url?: string; // short-lived signed download URL
+}
+
+export async function getDocuments(): Promise<CompanyDocument[]> {
+  const db = serverClient();
+  const { data, error } = await db
+    .from("documents")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) return []; // table may not exist yet — fail soft
+
+  const rows = data as {
+    id: string;
+    name: string;
+    path: string;
+    mime: string | null;
+    size: number;
+    uploaded_by: string;
+    created_at: string;
+  }[];
+
+  // Generate short-lived signed URLs for download.
+  const docs: CompanyDocument[] = [];
+  for (const r of rows) {
+    const { data: signed } = await db.storage
+      .from("company-docs")
+      .createSignedUrl(r.path, 3600);
+    docs.push({
+      id: r.id,
+      name: r.name,
+      path: r.path,
+      mime: r.mime ?? undefined,
+      size: r.size,
+      uploadedBy: r.uploaded_by,
+      createdAt: r.created_at,
+      url: signed?.signedUrl,
+    });
+  }
+  return docs;
 }

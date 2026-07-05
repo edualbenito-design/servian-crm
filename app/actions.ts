@@ -37,6 +37,7 @@ type ClientFields = {
   email: string;
   location: string;
   propertyType: PropertyType;
+  renovationType: string;
   leadSource: LeadSource;
   assignedTo: Salesperson;
   capturedBy: string;
@@ -86,6 +87,7 @@ export async function updateClient(clientId: string, fields: ClientFields): Prom
       email: fields.email.trim() || undefined,
       location: fields.location.trim() || undefined,
       property_type: fields.propertyType,
+      renovation_type: fields.renovationType.trim() || null,
       lead_source: fields.leadSource,
       assigned_to: fields.assignedTo,
       captured_by: fields.capturedBy.trim() || null,
@@ -111,6 +113,7 @@ export async function createClient(fields: ClientFields): Promise<string> {
       email: fields.email.trim() || "",
       location: fields.location.trim() || "",
       property_type: fields.propertyType,
+      renovation_type: fields.renovationType.trim() || null,
       lead_source: fields.leadSource,
       assigned_to: fields.assignedTo,
       captured_by: fields.capturedBy.trim() || null,
@@ -422,4 +425,55 @@ export async function deleteQuote(
   const { error } = await db.from("quotes").delete().eq("id", quoteId);
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${clientId}`);
+}
+
+// ─── Company documents (managers only) ─────────────────────────────────────────
+
+const DOCS_BUCKET = "company-docs";
+
+export async function uploadDocument(formData: FormData): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile || !profile.isManager) {
+    throw new Error("Only managers can upload documents.");
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("No file provided.");
+  }
+
+  const db = serverClient();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${Date.now()}-${safeName}`;
+
+  const { error: upErr } = await db.storage
+    .from(DOCS_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (upErr) throw new Error(upErr.message);
+
+  const { error: dbErr } = await db.from("documents").insert({
+    name: file.name,
+    path,
+    mime: file.type || null,
+    size: file.size,
+    uploaded_by: profile.name,
+  });
+  if (dbErr) throw new Error(dbErr.message);
+
+  revalidatePath("/documents");
+}
+
+export async function deleteDocument(
+  documentId: string,
+  path: string
+): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile || !profile.isManager) {
+    throw new Error("Only managers can delete documents.");
+  }
+  const db = serverClient();
+  await db.storage.from(DOCS_BUCKET).remove([path]);
+  const { error } = await db.from("documents").delete().eq("id", documentId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/documents");
 }
