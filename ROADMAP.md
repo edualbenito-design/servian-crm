@@ -22,8 +22,9 @@
 - [x] **Cotizaciones**: crear por proyecto, líneas + 5% VAT, PDF imprimible, seguimiento de estado
 - [x] **Tipo de renovación** (campo texto libre en cliente)
 - [x] **Documentos de empresa** (managers): subir/descargar/borrar (Supabase Storage, bucket company-docs privado)
+- [x] **Archivos por proyecto**: renders, comprobantes de pago, docs por proyecto (Supabase Storage, bucket project-files)
+- [x] **Contacto rápido**: botones WhatsApp / Llamar / Email en la ficha del cliente
 - [ ] Integrar logo + formato fijo en el PDF de cotización (pendiente de recibir el logo)
-- [ ] **Archivos por proyecto**: renders, comprobantes de pago por proyecto (Supabase Storage)
 - Nota: pulido de móvil PAUSADO a propósito hasta rematar funcionalidad del CRM (versión móvil actual ya usable)
 
 ## ✅ Hecho (despliegue)
