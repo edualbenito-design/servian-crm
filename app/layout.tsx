@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NavLinks } from "./components/NavLinks";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -54,7 +55,10 @@ export default async function RootLayout({
         {profile && (
           <header className="border-b border-(--border) bg-(--surface)">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <Link
+                href="/home"
+                className="flex items-center gap-2 sm:gap-3 shrink-0 hover:opacity-80 transition-opacity"
+              >
                 <div className="w-8 h-8 rounded bg-(--accent) flex items-center justify-center">
                   <svg
                     width="18"
@@ -79,7 +83,7 @@ export default async function RootLayout({
                     CRM
                   </span>
                 </div>
-              </div>
+              </Link>
               <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 <NavLinks isManager={profile.isManager} />
                 <div className="hidden sm:block w-px h-5 bg-(--border) mx-1" />
