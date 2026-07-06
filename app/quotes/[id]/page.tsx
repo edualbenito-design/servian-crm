@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { getQuote, getClient } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
-import { quoteTotals } from "@/lib/data";
+import { quoteTotals, paymentSummary } from "@/lib/data";
 import { QuotePrint } from "./QuotePrint";
 
 export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
   const { id } = await props.params;
+  const sp = await props.searchParams;
+  const variant = sp?.doc === "invoice" ? "invoice" : "quote";
   const quote = await getQuote(id);
   if (!quote) notFound();
 
@@ -20,6 +22,7 @@ export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
 
   const project = client.projects.find((p) => p.id === quote.projectId);
   const totals = quoteTotals(quote);
+  const { paid, balance } = paymentSummary(totals.total, quote.payments);
 
   return (
     <QuotePrint
@@ -27,6 +30,9 @@ export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
       totals={totals}
       client={{ name: client.name, phone: client.phone, email: client.email, location: client.location }}
       projectName={project?.name ?? ""}
+      variant={variant}
+      paid={paid}
+      balance={balance}
     />
   );
 }

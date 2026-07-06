@@ -78,6 +78,29 @@ export interface QuoteItem {
   unitPrice: number;
 }
 
+export type PaymentMethod = "cash" | "bank" | "cheque" | "card" | "other";
+
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "bank", label: "Bank transfer" },
+  { value: "cash", label: "Cash" },
+  { value: "cheque", label: "Cheque" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+];
+
+export interface Payment {
+  id: string;
+  quoteId: string;
+  projectId: string;
+  clientId: string;
+  amount: number;
+  method: PaymentMethod;
+  paidOn: string; // YYYY-MM-DD
+  note?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
 export interface Quote {
   id: string;
   projectId: string;
@@ -91,6 +114,25 @@ export interface Quote {
   items: QuoteItem[];
   sentAt?: string;
   createdAt: string;
+  // Payments recorded against this (accepted) quote
+  payments: Payment[];
+  // Invoice issuance (an accepted quote issued as a TAX INVOICE)
+  invoiceNumber?: string;
+  invoicedAt?: string;
+}
+
+export type PaymentStatus = "unpaid" | "partial" | "paid";
+
+// Sums payments against a total and derives the payment status.
+export function paymentSummary(
+  total: number,
+  payments: { amount: number }[]
+): { paid: number; balance: number; status: PaymentStatus } {
+  const paid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const balance = Math.max(0, total - paid);
+  const status: PaymentStatus =
+    paid <= 0 ? "unpaid" : paid + 0.001 >= total ? "paid" : "partial";
+  return { paid, balance, status };
 }
 
 export type FollowUpState = "overdue" | "today" | "upcoming" | "none";

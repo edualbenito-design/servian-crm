@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
 
 type DbQuote = {
   id: string;
@@ -14,7 +14,37 @@ type DbQuote = {
   items: QuoteItem[] | null;
   sent_at: string | null;
   created_at: string;
+  invoice_number?: string | null;
+  invoiced_at?: string | null;
 };
+
+type DbPayment = {
+  id: string;
+  quote_id: string;
+  project_id: string;
+  client_id: string;
+  amount: number;
+  method: string | null;
+  paid_on: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+function toPayment(p: DbPayment): Payment {
+  return {
+    id: p.id,
+    quoteId: p.quote_id,
+    projectId: p.project_id,
+    clientId: p.client_id,
+    amount: Number(p.amount) || 0,
+    method: (p.method as PaymentMethod) ?? "other",
+    paidOn: p.paid_on ?? p.created_at.slice(0, 10),
+    note: p.note ?? undefined,
+    createdBy: p.created_by ?? undefined,
+    createdAt: p.created_at,
+  };
+}
 
 function toQuote(q: DbQuote): Quote {
   return {
@@ -30,6 +60,9 @@ function toQuote(q: DbQuote): Quote {
     items: q.items ?? [],
     sentAt: q.sent_at ?? undefined,
     createdAt: q.created_at,
+    payments: [],
+    invoiceNumber: q.invoice_number ?? undefined,
+    invoicedAt: q.invoiced_at ?? undefined,
   };
 }
 
@@ -204,7 +237,15 @@ export async function getQuote(id: string): Promise<Quote | null> {
     .eq("id", id)
     .single();
   if (error) return null;
-  return toQuote(data as DbQuote);
+  const quote = toQuote(data as DbQuote);
+  // Attach payments (fail soft if the table isn't there yet).
+  const { data: pays } = await db
+    .from("payments")
+    .select("*")
+    .eq("quote_id", id)
+    .order("paid_on", { ascending: true });
+  if (pays) quote.payments = (pays as DbPayment[]).map(toPayment);
+  return quote;
 }
 
 export async function getClient(id: string): Promise<Client | null> {
@@ -232,7 +273,33 @@ export async function getClient(id: string): Promise<Client | null> {
   if ((data as DbClient).deleted_at) return null;
   const client = toClient(data as DbClient);
   await attachProjectFiles(client);
+  await attachPayments(client);
   return client;
+}
+
+// Loads payments for a client and attaches them to the matching quote inside
+// each project. Fails soft if the table isn't there yet.
+async function attachPayments(client: Client): Promise<void> {
+  const db = serverClient();
+  const { data, error } = await db
+    .from("payments")
+    .select("*")
+    .eq("client_id", client.id)
+    .order("paid_on", { ascending: true });
+  if (error || !data) return;
+
+  const byQuote = new Map<string, Payment[]>();
+  for (const p of (data as DbPayment[]).map(toPayment)) {
+    const list = byQuote.get(p.quoteId) ?? [];
+    list.push(p);
+    byQuote.set(p.quoteId, list);
+  }
+
+  for (const project of client.projects) {
+    for (const quote of project.quotes) {
+      quote.payments = byQuote.get(quote.id) ?? [];
+    }
+  }
 }
 
 // Loads project files for a client and attaches them (with signed URLs) to each

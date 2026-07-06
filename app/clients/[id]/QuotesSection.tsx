@@ -3,15 +3,23 @@
 import { useState, useEffect, useRef } from "react";
 import {
   quoteTotals,
+  paymentSummary,
+  PAYMENT_METHODS,
   type Quote,
   type QuoteItem,
   type QuoteStatus,
+  type Payment,
+  type PaymentMethod,
+  type PaymentStatus,
 } from "@/lib/data";
 import {
   createQuote,
   updateQuote,
   setQuoteStatus,
   deleteQuote,
+  addPayment,
+  deletePayment,
+  createInvoice,
 } from "@/app/actions";
 
 const INPUT =
@@ -42,6 +50,28 @@ function money(n: number) {
     maximumFractionDigits: 0,
   }).format(n);
 }
+
+const paymentStatusStyle: Record<PaymentStatus, string> = {
+  unpaid:
+    "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/50",
+  partial:
+    "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50",
+  paid: "bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50",
+};
+
+const paymentStatusLabel: Record<PaymentStatus, string> = {
+  unpaid: "Unpaid",
+  partial: "Partially paid",
+  paid: "Paid",
+};
+
+const methodLabel: Record<PaymentMethod, string> = {
+  bank: "Bank transfer",
+  cash: "Cash",
+  cheque: "Cheque",
+  card: "Card",
+  other: "Other",
+};
 
 function formatDate(s?: string) {
   if (!s) return "—";
@@ -78,6 +108,196 @@ function toForm(q: Quote): Form {
     notes: q.notes ?? "",
     items: q.items.length ? q.items : [{ description: "", qty: 1, unitPrice: 0 }],
   };
+}
+
+// Payments + invoice panel shown under an accepted quote.
+function PaymentsPanel({
+  quote,
+  onAdd,
+  onDelete,
+  onInvoice,
+}: {
+  quote: Quote;
+  onAdd: (fields: {
+    amount: number;
+    method: PaymentMethod;
+    paidOn: string;
+    note: string;
+  }) => Promise<void>;
+  onDelete: (paymentId: string) => Promise<void>;
+  onInvoice: () => Promise<string>;
+}) {
+  const total = quoteTotals(quote).total;
+  const { paid, balance, status } = paymentSummary(total, quote.payments);
+
+  const [adding, setAdding] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>("bank");
+  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function openForm() {
+    setAmount(balance > 0 ? String(Math.round(balance)) : "");
+    setMethod("bank");
+    setPaidOn(new Date().toISOString().slice(0, 10));
+    setNote("");
+    setAdding(true);
+  }
+
+  async function submit() {
+    if (busy) return;
+    const amt = Number(amount) || 0;
+    if (amt <= 0) return;
+    setBusy(true);
+    try {
+      await onAdd({ amount: amt, method, paidOn, note });
+      setAdding(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openInvoice() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (!quote.invoiceNumber) await onInvoice();
+      window.open(
+        `/quotes/${quote.id}?doc=invoice`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-(--border) bg-(--card) p-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+            Payments
+          </span>
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${paymentStatusStyle[status]}`}
+          >
+            {paymentStatusLabel[status]}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={openInvoice}
+          disabled={busy}
+          className="px-2.5 py-1 rounded-md text-xs font-medium text-(--accent) border border-(--accent)/30 hover:bg-(--accent)/10 transition-colors disabled:opacity-50"
+        >
+          {quote.invoiceNumber ? `Invoice ${quote.invoiceNumber}` : "Create invoice"}
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="rounded-md bg-(--surface) border border-(--border) px-3 py-2">
+          <p className="text-[11px] text-(--text-muted)">Due</p>
+          <p className="text-sm font-bold font-mono text-(--text-primary)">
+            {money(total)}
+          </p>
+        </div>
+        <div className="rounded-md bg-(--surface) border border-(--border) px-3 py-2">
+          <p className="text-[11px] text-(--text-muted)">Paid</p>
+          <p className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">
+            {money(paid)}
+          </p>
+        </div>
+        <div className="rounded-md bg-(--surface) border border-(--border) px-3 py-2">
+          <p className="text-[11px] text-(--text-muted)">Balance</p>
+          <p className="text-sm font-bold font-mono text-(--accent)">
+            {money(balance)}
+          </p>
+        </div>
+      </div>
+
+      {/* Payment list */}
+      {quote.payments.length > 0 && (
+        <ul className="space-y-1.5 mb-3">
+          {quote.payments.map((p) => (
+            <li
+              key={p.id}
+              className="flex items-center justify-between gap-2 text-sm rounded-md bg-(--surface) border border-(--border) px-3 py-1.5"
+            >
+              <div className="min-w-0">
+                <span className="font-mono font-semibold text-(--text-primary)">
+                  {money(p.amount)}
+                </span>
+                <span className="text-(--text-muted)">
+                  {" · "}
+                  {methodLabel[p.method]}
+                  {" · "}
+                  {formatDate(p.paidOn)}
+                  {p.note ? ` · ${p.note}` : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onDelete(p.id)}
+                className="shrink-0 text-(--text-muted) hover:text-red-500 transition-colors"
+                title="Remove payment"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Add payment */}
+      {adding ? (
+        <div className="rounded-md border border-(--border) bg-(--surface) p-3 space-y-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Amount (AED)</label>
+              <input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className={INPUT} placeholder="0" autoFocus />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Method</label>
+              <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} className={INPUT}>
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Date</label>
+              <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className={INPUT} />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Note <span className="font-normal">(optional)</span></label>
+              <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} placeholder="e.g. Deposit" />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setAdding(false)} className="px-3 py-1.5 text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors">
+              Cancel
+            </button>
+            <button type="button" onClick={submit} disabled={busy || !(Number(amount) > 0)} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors disabled:opacity-50">
+              {busy ? "Saving…" : "Record payment"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openForm}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+        >
+          + Record payment
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function QuotesSection({
@@ -176,6 +396,41 @@ export function QuotesSection({
     if (!confirm(`Delete quote ${q.number}?`)) return;
     setQuotes((prev) => prev.filter((x) => x.id !== q.id));
     await deleteQuote(clientId, q.id);
+  }
+
+  async function addPay(
+    q: Quote,
+    fields: { amount: number; method: PaymentMethod; paidOn: string; note: string }
+  ) {
+    const created: Payment = await addPayment(clientId, projectId, q.id, fields);
+    setQuotes((prev) =>
+      prev.map((x) =>
+        x.id === q.id ? { ...x, payments: [...x.payments, created] } : x
+      )
+    );
+  }
+
+  async function removePay(q: Quote, paymentId: string) {
+    setQuotes((prev) =>
+      prev.map((x) =>
+        x.id === q.id
+          ? { ...x, payments: x.payments.filter((p) => p.id !== paymentId) }
+          : x
+      )
+    );
+    await deletePayment(clientId, paymentId);
+  }
+
+  async function makeInvoice(q: Quote): Promise<string> {
+    const res = await createInvoice(clientId, q.id);
+    setQuotes((prev) =>
+      prev.map((x) =>
+        x.id === q.id
+          ? { ...x, invoiceNumber: res.invoiceNumber, invoicedAt: res.invoicedAt }
+          : x
+      )
+    );
+    return res.invoiceNumber;
   }
 
   return (
@@ -277,6 +532,15 @@ export function QuotesSection({
                     Delete
                   </button>
                 </div>
+
+                {q.status === "accepted" && (
+                  <PaymentsPanel
+                    quote={q}
+                    onAdd={(fields) => addPay(q, fields)}
+                    onDelete={(paymentId) => removePay(q, paymentId)}
+                    onInvoice={() => makeInvoice(q)}
+                  />
+                )}
               </div>
             );
           })}

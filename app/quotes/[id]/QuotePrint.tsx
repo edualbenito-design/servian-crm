@@ -27,13 +27,26 @@ export function QuotePrint({
   totals,
   client,
   projectName,
+  variant = "quote",
+  paid = 0,
+  balance,
 }: {
   quote: Quote;
   totals: { subtotal: number; vat: number; total: number };
   client: { name: string; phone: string; email: string; location: string };
   projectName: string;
+  variant?: "quote" | "invoice";
+  paid?: number;
+  balance?: number;
 }) {
   const [logoOk, setLogoOk] = useState(true);
+  const isInvoice = variant === "invoice";
+  const docTitle = isInvoice ? "TAX INVOICE" : "QUOTATION";
+  const docNumber = isInvoice
+    ? quote.invoiceNumber ?? quote.number
+    : quote.number;
+  const docDate = isInvoice ? quote.invoicedAt ?? quote.issueDate : quote.issueDate;
+  const balanceDue = balance ?? totals.total - paid;
 
   return (
     <div className="min-h-screen bg-zinc-100 py-6 print:bg-white print:py-0">
@@ -84,13 +97,17 @@ export function QuotePrint({
           </div>
           <div className="text-right">
             <p className="text-3xl font-light tracking-wide text-zinc-700">
-              QUOTATION
+              {docTitle}
             </p>
             <p className="font-semibold text-sm" style={{ color: GOLD }}>
-              # {quote.number}
+              # {docNumber}
             </p>
-            <p className="mt-3 text-xs text-zinc-500">Total</p>
-            <p className="text-lg font-bold">AED {money(totals.total)}</p>
+            <p className="mt-3 text-xs text-zinc-500">
+              {isInvoice ? "Balance Due" : "Total"}
+            </p>
+            <p className="text-lg font-bold">
+              AED {money(isInvoice ? balanceDue : totals.total)}
+            </p>
           </div>
         </div>
 
@@ -107,6 +124,12 @@ export function QuotePrint({
             {COMPANY.email}
             <br />
             {COMPANY.website}
+            {COMPANY.trn && (
+              <>
+                <br />
+                TRN: {COMPANY.trn}
+              </>
+            )}
           </p>
         </div>
 
@@ -125,16 +148,25 @@ export function QuotePrint({
           </div>
           <div className="text-right space-y-1">
             <div className="flex justify-end gap-6">
-              <span style={{ color: GOLD }}>Quote Date :</span>
-              <span className="w-28 text-right">{formatDate(quote.issueDate)}</span>
+              <span style={{ color: GOLD }}>
+                {isInvoice ? "Invoice Date :" : "Quote Date :"}
+              </span>
+              <span className="w-28 text-right">{formatDate(docDate)}</span>
             </div>
-            {quote.validUntil && (
+            {isInvoice ? (
               <div className="flex justify-end gap-6">
-                <span style={{ color: GOLD }}>Valid Until :</span>
-                <span className="w-28 text-right">
-                  {formatDate(quote.validUntil)}
-                </span>
+                <span style={{ color: GOLD }}>Ref. Quote :</span>
+                <span className="w-28 text-right">{quote.number}</span>
               </div>
+            ) : (
+              quote.validUntil && (
+                <div className="flex justify-end gap-6">
+                  <span style={{ color: GOLD }}>Valid Until :</span>
+                  <span className="w-28 text-right">
+                    {formatDate(quote.validUntil)}
+                  </span>
+                </div>
+              )
             )}
           </div>
         </div>
@@ -185,6 +217,18 @@ export function QuotePrint({
               <span>Total</span>
               <span>AED {money(totals.total)}</span>
             </div>
+            {isInvoice && (
+              <>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-zinc-500">Paid</span>
+                  <span>- {money(paid)}</span>
+                </div>
+                <div className="flex justify-between py-2 border-t-2 border-zinc-800 font-bold text-base">
+                  <span>Balance Due</span>
+                  <span>AED {money(balanceDue)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

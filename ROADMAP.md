@@ -44,14 +44,19 @@
 - [ ] Crear cuentas de los otros comerciales cuando haya emails: Elsayed, Faizan (rol sales, full_name exacto)
 - [ ] Estructura para leads de RRSS (campos de campaña/UTM) + pool genérico → asignación (manual ahora, round-robin igualitario futuro)
 - [ ] Adjuntar archivos/fotos por proyecto (presupuestos, planos, fotos del sitio)
-- [ ] Estados de pago / facturas / comprobantes
+- [x] **Estados de pago / facturas**: en cada cotización aceptada se registran pagos
+  (importe/método/fecha/nota) con resumen Debido/Pagado/Saldo y estado
+  (Sin pagar/Parcial/Pagado). Botón para emitir **TAX INVOICE** imprimible
+  (INV-AÑO-NNNN, reutiliza el diseño del PDF, muestra pagado y saldo). TRN opcional
+  en `lib/company.ts`. SQL: `sql/2026-07-07-payments-invoices.sql`
 - [ ] Botón de WhatsApp directo por cliente
 - [ ] Recordatorios / próxima acción + briefing diario 9am
 - [ ] Desplegar a una URL pública (Vercel) para uso multi-dispositivo
 
 ## 🗄️ Migraciones SQL pendientes de ejecutar en Supabase
-- [ ] **Borrado/archivado** (columnas en clients y projects): `sql/2026-07-07-deletion-archive.sql`
-  — necesario para que funcionen los botones de borrado. Las lecturas ya son resilientes.
+- [x] **Borrado/archivado** (columnas en clients y projects): `sql/2026-07-07-deletion-archive.sql` — corrido.
+- [ ] **Pagos y facturas** (tabla payments + invoice_number/invoiced_at en quotes):
+  `sql/2026-07-07-payments-invoices.sql` — necesario para registrar pagos y emitir facturas.
 - [ ] Columnas de aprobación en projects (ver mensaje del chat):
   ```sql
   ALTER TABLE projects

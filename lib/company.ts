@@ -6,6 +6,8 @@ export const COMPANY = {
   phone: "0585181723",
   email: "serviancontracting@gmail.com",
   website: "www.serviancontracting.com",
+  // Tax Registration Number — shown on TAX INVOICE documents. Fill in when available.
+  trn: "",
   bank: {
     name: "WIO Bank",
     accountName: "Servian Contracting L.L.C",

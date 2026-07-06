@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -542,6 +542,7 @@ export async function createQuote(
     items: data.items ?? [],
     sentAt: data.sent_at ?? undefined,
     createdAt: data.created_at,
+    payments: [],
   };
 }
 
@@ -601,6 +602,121 @@ export async function deleteQuote(
   const { error } = await db.from("quotes").delete().eq("id", quoteId);
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${clientId}`);
+}
+
+// ─── Payments & invoices ─────────────────────────────────────────────────────────
+
+type PaymentFields = {
+  amount: number;
+  method: PaymentMethod;
+  paidOn: string;
+  note: string;
+};
+
+// Records a payment against an accepted quote. Owner commercial or manager.
+export async function addPayment(
+  clientId: string,
+  projectId: string,
+  quoteId: string,
+  fields: PaymentFields
+): Promise<Payment> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const amount = Math.max(0, Number(fields.amount) || 0);
+  const { data, error } = await db
+    .from("payments")
+    .insert({
+      quote_id: quoteId,
+      project_id: projectId,
+      client_id: clientId,
+      amount,
+      method: fields.method,
+      paid_on: fields.paidOn || new Date().toISOString().slice(0, 10),
+      note: fields.note.trim() || null,
+      created_by: profile?.name ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    clientId,
+    "note",
+    `💵 Payment recorded: AED ${amount.toLocaleString("en-AE")}`,
+    projectId
+  );
+  revalidatePath(`/clients/${clientId}`);
+
+  return {
+    id: data.id,
+    quoteId: data.quote_id,
+    projectId: data.project_id,
+    clientId: data.client_id,
+    amount: Number(data.amount) || 0,
+    method: (data.method as PaymentMethod) ?? "other",
+    paidOn: data.paid_on ?? data.created_at.slice(0, 10),
+    note: data.note ?? undefined,
+    createdBy: data.created_by ?? undefined,
+    createdAt: data.created_at,
+  };
+}
+
+export async function deletePayment(
+  clientId: string,
+  paymentId: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { error } = await db.from("payments").delete().eq("id", paymentId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Generates the next invoice number, e.g. INV-2026-0007.
+async function nextInvoiceNumber(): Promise<string> {
+  const db = serverClient();
+  const year = new Date().getFullYear();
+  const { count } = await db
+    .from("quotes")
+    .select("id", { count: "exact", head: true })
+    .not("invoice_number", "is", null);
+  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  return `INV-${year}-${seq}`;
+}
+
+// Issues a TAX INVOICE from a quote: assigns an invoice number once, idempotent.
+export async function createInvoice(
+  clientId: string,
+  quoteId: string
+): Promise<{ invoiceNumber: string; invoicedAt: string }> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+
+  // If already issued, return the existing number (don't renumber).
+  const { data: existing } = await db
+    .from("quotes")
+    .select("invoice_number, invoiced_at")
+    .eq("id", quoteId)
+    .single();
+  if (existing?.invoice_number) {
+    return {
+      invoiceNumber: existing.invoice_number,
+      invoicedAt: existing.invoiced_at ?? new Date().toISOString(),
+    };
+  }
+
+  const invoiceNumber = await nextInvoiceNumber();
+  const invoicedAt = new Date().toISOString();
+  const { error } = await db
+    .from("quotes")
+    .update({ invoice_number: invoiceNumber, invoiced_at: invoicedAt })
+    .eq("id", quoteId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(clientId, "note", `🧾 Invoice ${invoiceNumber} issued`);
+  revalidatePath(`/clients/${clientId}`);
+  return { invoiceNumber, invoicedAt };
 }
 
 // ─── Company documents (managers only) ─────────────────────────────────────────
