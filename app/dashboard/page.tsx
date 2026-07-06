@@ -21,11 +21,13 @@ function money(n: number) {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-(--card) border border-(--border) rounded-xl p-5">
-      <p className="text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+    <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+      <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
         {label}
       </p>
-      <p className="text-2xl font-bold text-(--text-primary)">{value}</p>
+      <p className="text-lg sm:text-2xl font-bold text-(--text-primary) truncate">
+        {value}
+      </p>
     </div>
   );
 }

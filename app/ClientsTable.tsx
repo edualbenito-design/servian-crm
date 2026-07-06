@@ -139,28 +139,28 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
   return (
     <>
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-(--card) border border-(--border) rounded-xl p-5">
-          <p className="text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
-            {filterBy ? "Filtered Clients" : "Total Clients"}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 sm:mb-8">
+        <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+          <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+            {filterBy ? "Filtered" : "Clients"}
           </p>
-          <p className="text-3xl font-bold text-(--text-primary)">
+          <p className="text-xl sm:text-3xl font-bold text-(--text-primary)">
             {filtered.length}
           </p>
         </div>
-        <div className="bg-(--card) border border-(--border) rounded-xl p-5">
-          <p className="text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
-            Active Projects
+        <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+          <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+            Active
           </p>
-          <p className="text-3xl font-bold text-(--text-primary)">
+          <p className="text-xl sm:text-3xl font-bold text-(--text-primary)">
             {totalActiveProjects}
           </p>
         </div>
-        <div className="bg-(--card) border border-(--border) rounded-xl p-5">
-          <p className="text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
-            Total Portfolio
+        <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+          <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+            Portfolio
           </p>
-          <p className="text-3xl font-bold text-(--text-primary)">
+          <p className="text-sm sm:text-3xl font-bold text-(--text-primary) truncate">
             {formatCurrency(totalPortfolio)}
           </p>
         </div>
