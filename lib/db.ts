@@ -26,6 +26,7 @@ type DbPayment = {
   amount: number;
   method: string | null;
   paid_on: string | null;
+  milestone?: string | null;
   note: string | null;
   created_by: string | null;
   created_at: string;
@@ -40,6 +41,7 @@ function toPayment(p: DbPayment): Payment {
     amount: Number(p.amount) || 0,
     method: (p.method as PaymentMethod) ?? "other",
     paidOn: p.paid_on ?? p.created_at.slice(0, 10),
+    milestone: p.milestone ?? undefined,
     note: p.note ?? undefined,
     createdBy: p.created_by ?? undefined,
     createdAt: p.created_at,

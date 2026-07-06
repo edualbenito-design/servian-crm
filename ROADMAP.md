@@ -48,7 +48,9 @@
   (importe/método/fecha/nota) con resumen Debido/Pagado/Saldo y estado
   (Sin pagar/Parcial/Pagado). Botón para emitir **TAX INVOICE** imprimible
   (INV-AÑO-NNNN, reutiliza el diseño del PDF, muestra pagado y saldo). TRN opcional
-  en `lib/company.ts`. SQL: `sql/2026-07-07-payments-invoices.sql`
+  en `lib/company.ts` (pendiente de que Sergio lo envíe). % pagado/pendiente con barra
+  de progreso + etiqueta de hito por pago (Primer/Segundo/Último pago).
+  SQL: `sql/2026-07-07-payments-invoices.sql` + `sql/2026-07-07-payment-milestone.sql`
 - [ ] Botón de WhatsApp directo por cliente
 - [ ] Recordatorios / próxima acción + briefing diario 9am
 - [ ] Desplegar a una URL pública (Vercel) para uso multi-dispositivo

@@ -88,6 +88,16 @@ export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+// Milestone label for a payment (construction jobs are usually paid in stages).
+export const PAYMENT_MILESTONES = [
+  "First payment",
+  "Second payment",
+  "Third payment",
+  "Fourth payment",
+  "Final payment",
+  "Other",
+] as const;
+
 export interface Payment {
   id: string;
   quoteId: string;
@@ -96,6 +106,7 @@ export interface Payment {
   amount: number;
   method: PaymentMethod;
   paidOn: string; // YYYY-MM-DD
+  milestone?: string; // e.g. "First payment", "Final payment"
   note?: string;
   createdBy?: string;
   createdAt: string;
@@ -123,16 +134,24 @@ export interface Quote {
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
-// Sums payments against a total and derives the payment status.
+// Sums payments against a total and derives status + percentage paid.
 export function paymentSummary(
   total: number,
   payments: { amount: number }[]
-): { paid: number; balance: number; status: PaymentStatus } {
+): {
+  paid: number;
+  balance: number;
+  status: PaymentStatus;
+  pctPaid: number;
+  pctPending: number;
+} {
   const paid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const balance = Math.max(0, total - paid);
   const status: PaymentStatus =
     paid <= 0 ? "unpaid" : paid + 0.001 >= total ? "paid" : "partial";
-  return { paid, balance, status };
+  const pctPaid =
+    total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : paid > 0 ? 100 : 0;
+  return { paid, balance, status, pctPaid, pctPending: 100 - pctPaid };
 }
 
 export type FollowUpState = "overdue" | "today" | "upcoming" | "none";

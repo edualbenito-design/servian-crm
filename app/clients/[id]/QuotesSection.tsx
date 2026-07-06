@@ -5,6 +5,7 @@ import {
   quoteTotals,
   paymentSummary,
   PAYMENT_METHODS,
+  PAYMENT_MILESTONES,
   type Quote,
   type QuoteItem,
   type QuoteStatus,
@@ -122,25 +123,37 @@ function PaymentsPanel({
     amount: number;
     method: PaymentMethod;
     paidOn: string;
+    milestone: string;
     note: string;
   }) => Promise<void>;
   onDelete: (paymentId: string) => Promise<void>;
   onInvoice: () => Promise<string>;
 }) {
   const total = quoteTotals(quote).total;
-  const { paid, balance, status } = paymentSummary(total, quote.payments);
+  const { paid, balance, status, pctPaid } = paymentSummary(total, quote.payments);
 
   const [adding, setAdding] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
+  const [milestone, setMilestone] = useState<string>("First payment");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Suggests the next milestone: ordinal by count, or "Final payment" once we
+  // run out of ordinals (user can always change it).
+  function suggestMilestone() {
+    const n = quote.payments.length;
+    return PAYMENT_MILESTONES[n] ?? "Final payment";
+  }
+
   function openForm() {
+    const willSettle = balance > 0 && Math.round(balance) >= balance;
     setAmount(balance > 0 ? String(Math.round(balance)) : "");
     setMethod("bank");
     setPaidOn(new Date().toISOString().slice(0, 10));
+    // If this payment clears the balance, default to "Final payment".
+    setMilestone(willSettle ? "Final payment" : suggestMilestone());
     setNote("");
     setAdding(true);
   }
@@ -151,7 +164,7 @@ function PaymentsPanel({
     if (amt <= 0) return;
     setBusy(true);
     try {
-      await onAdd({ amount: amt, method, paidOn, note });
+      await onAdd({ amount: amt, method, paidOn, milestone, note });
       setAdding(false);
     } finally {
       setBusy(false);
@@ -197,7 +210,7 @@ function PaymentsPanel({
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
+      <div className="grid grid-cols-3 gap-2 mb-2">
         <div className="rounded-md bg-(--surface) border border-(--border) px-3 py-2">
           <p className="text-[11px] text-(--text-muted)">Due</p>
           <p className="text-sm font-bold font-mono text-(--text-primary)">
@@ -218,6 +231,22 @@ function PaymentsPanel({
         </div>
       </div>
 
+      {/* Progress: % paid / pending */}
+      <div className="mb-3">
+        <div className="h-2 w-full rounded-full bg-(--surface) border border-(--border) overflow-hidden">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all"
+            style={{ width: `${pctPaid}%` }}
+          />
+        </div>
+        <div className="flex justify-between mt-1 text-[11px]">
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+            {pctPaid}% paid
+          </span>
+          <span className="text-(--text-muted)">{100 - pctPaid}% pending</span>
+        </div>
+      </div>
+
       {/* Payment list */}
       {quote.payments.length > 0 && (
         <ul className="space-y-1.5 mb-3">
@@ -226,12 +255,16 @@ function PaymentsPanel({
               key={p.id}
               className="flex items-center justify-between gap-2 text-sm rounded-md bg-(--surface) border border-(--border) px-3 py-1.5"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                {p.milestone && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-(--accent)/10 text-(--accent) border border-(--accent)/20 shrink-0">
+                    {p.milestone}
+                  </span>
+                )}
                 <span className="font-mono font-semibold text-(--text-primary)">
                   {money(p.amount)}
                 </span>
                 <span className="text-(--text-muted)">
-                  {" · "}
                   {methodLabel[p.method]}
                   {" · "}
                   {formatDate(p.paidOn)}
@@ -257,9 +290,17 @@ function PaymentsPanel({
       {adding ? (
         <div className="rounded-md border border-(--border) bg-(--surface) p-3 space-y-2">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="col-span-2 sm:col-span-1">
+            <div>
               <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Amount (AED)</label>
               <input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className={INPUT} placeholder="0" autoFocus />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Milestone</label>
+              <select value={milestone} onChange={(e) => setMilestone(e.target.value)} className={INPUT}>
+                {PAYMENT_MILESTONES.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Method</label>
@@ -273,10 +314,10 @@ function PaymentsPanel({
               <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Date</label>
               <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className={INPUT} />
             </div>
-            <div className="col-span-2 sm:col-span-1">
-              <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Note <span className="font-normal">(optional)</span></label>
-              <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} placeholder="e.g. Deposit" />
-            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Note <span className="font-normal">(optional)</span></label>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} placeholder="e.g. Cleared via WIO, ref 12345" />
           </div>
           <div className="flex items-center justify-end gap-2">
             <button type="button" onClick={() => setAdding(false)} className="px-3 py-1.5 text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors">
@@ -400,7 +441,13 @@ export function QuotesSection({
 
   async function addPay(
     q: Quote,
-    fields: { amount: number; method: PaymentMethod; paidOn: string; note: string }
+    fields: {
+      amount: number;
+      method: PaymentMethod;
+      paidOn: string;
+      milestone: string;
+      note: string;
+    }
   ) {
     const created: Payment = await addPayment(clientId, projectId, q.id, fields);
     setQuotes((prev) =>

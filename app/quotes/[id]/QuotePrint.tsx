@@ -30,6 +30,7 @@ export function QuotePrint({
   variant = "quote",
   paid = 0,
   balance,
+  pctPaid = 0,
 }: {
   quote: Quote;
   totals: { subtotal: number; vat: number; total: number };
@@ -38,6 +39,7 @@ export function QuotePrint({
   variant?: "quote" | "invoice";
   paid?: number;
   balance?: number;
+  pctPaid?: number;
 }) {
   const [logoOk, setLogoOk] = useState(true);
   const isInvoice = variant === "invoice";
@@ -220,7 +222,7 @@ export function QuotePrint({
             {isInvoice && (
               <>
                 <div className="flex justify-between py-1.5">
-                  <span className="text-zinc-500">Paid</span>
+                  <span className="text-zinc-500">Paid ({pctPaid}%)</span>
                   <span>- {money(paid)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-t-2 border-zinc-800 font-bold text-base">

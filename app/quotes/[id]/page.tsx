@@ -22,7 +22,7 @@ export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
 
   const project = client.projects.find((p) => p.id === quote.projectId);
   const totals = quoteTotals(quote);
-  const { paid, balance } = paymentSummary(totals.total, quote.payments);
+  const { paid, balance, pctPaid } = paymentSummary(totals.total, quote.payments);
 
   return (
     <QuotePrint
@@ -33,6 +33,7 @@ export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
       variant={variant}
       paid={paid}
       balance={balance}
+      pctPaid={pctPaid}
     />
   );
 }

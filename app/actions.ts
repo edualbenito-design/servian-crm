@@ -610,6 +610,7 @@ type PaymentFields = {
   amount: number;
   method: PaymentMethod;
   paidOn: string;
+  milestone: string;
   note: string;
 };
 
@@ -624,26 +625,35 @@ export async function addPayment(
   const profile = await getCurrentProfile();
   const db = serverClient();
   const amount = Math.max(0, Number(fields.amount) || 0);
-  const { data, error } = await db
+  const base = {
+    quote_id: quoteId,
+    project_id: projectId,
+    client_id: clientId,
+    amount,
+    method: fields.method,
+    paid_on: fields.paidOn || new Date().toISOString().slice(0, 10),
+    note: fields.note.trim() || null,
+    created_by: profile?.name ?? null,
+  };
+  // Try with milestone; if the column isn't there yet, retry without it.
+  let { data, error } = await db
     .from("payments")
-    .insert({
-      quote_id: quoteId,
-      project_id: projectId,
-      client_id: clientId,
-      amount,
-      method: fields.method,
-      paid_on: fields.paidOn || new Date().toISOString().slice(0, 10),
-      note: fields.note.trim() || null,
-      created_by: profile?.name ?? null,
-    })
+    .insert({ ...base, milestone: fields.milestone.trim() || null })
     .select()
     .single();
+  if (error) {
+    ({ data, error } = await db
+      .from("payments")
+      .insert(base)
+      .select()
+      .single());
+  }
   if (error) throw new Error(error.message);
 
   await logActivity(
     clientId,
     "note",
-    `💵 Payment recorded: AED ${amount.toLocaleString("en-AE")}`,
+    `💵 ${fields.milestone.trim() || "Payment"} recorded: AED ${amount.toLocaleString("en-AE")}`,
     projectId
   );
   revalidatePath(`/clients/${clientId}`);
@@ -656,6 +666,7 @@ export async function addPayment(
     amount: Number(data.amount) || 0,
     method: (data.method as PaymentMethod) ?? "other",
     paidOn: data.paid_on ?? data.created_at.slice(0, 10),
+    milestone: data.milestone ?? undefined,
     note: data.note ?? undefined,
     createdBy: data.created_by ?? undefined,
     createdAt: data.created_at,
