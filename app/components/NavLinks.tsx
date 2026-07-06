@@ -4,12 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const baseLinks = [
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/", label: "Clients" },
   { href: "/pipeline", label: "Pipeline" },
 ];
 
 const managerLinks = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/team", label: "Team" },
   { href: "/documents", label: "Docs" },
 ];

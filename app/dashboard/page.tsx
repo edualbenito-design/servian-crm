@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { getClients } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import {
@@ -9,6 +8,7 @@ import {
   performanceByCommercial,
   durationBySize,
 } from "@/lib/analytics";
+import { SalesDashboard } from "./SalesDashboard";
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -58,7 +58,12 @@ function Card({
 
 export default async function DashboardPage() {
   const profile = await getCurrentProfile();
-  if (profile && !profile.isManager) redirect("/");
+
+  // Commercials get their own personal dashboard (only their data).
+  if (profile && !profile.isManager) {
+    const myClients = await getClients(profile.name);
+    return <SalesDashboard clients={myClients} name={profile.name} />;
+  }
 
   const clients = await getClients();
 
