@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { signIn } from "./actions";
+import { LogoMark } from "@/app/components/Logo";
 
 const INPUT =
   "w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2.5 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50 focus:ring-1 focus:ring-(--accent)/20 transition-colors";
@@ -13,30 +14,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         {/* Brand */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-9 h-9 rounded bg-(--accent) flex items-center justify-center">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-white dark:text-black"
-            >
-              <path d="M3 21V9l9-6 9 6v12" />
-              <path d="M9 21V12h6v9" />
-            </svg>
-          </div>
-          <div>
-            <span className="font-semibold text-(--text-primary) tracking-tight">
-              Servian Contracting
-            </span>
-            <span className="ml-2 text-xs font-medium text-(--text-muted) uppercase tracking-widest">
-              CRM
-            </span>
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <LogoMark size={56} />
+          <div className="text-center">
+            <p className="font-semibold tracking-[0.2em] text-(--text-primary)">
+              SERVIAN
+            </p>
+            <p className="text-[10px] tracking-[0.35em] text-(--text-muted)">
+              CONTRACTING
+            </p>
           </div>
         </div>
 

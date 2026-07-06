@@ -14,6 +14,7 @@ import {
   type ProjectCategory,
   type TeamStats,
 } from "@/lib/team";
+import { NewClientButton } from "@/app/NewClientModal";
 
 const avatarColor: Record<Salesperson, string> = {
   Joana: "bg-indigo-200 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-200",
@@ -105,21 +106,31 @@ export function TeamMemberView({
       </Link>
 
       {/* Header */}
-      <div className="flex items-center gap-5 mb-8">
-        <div
-          className={`w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-bold select-none ${avatarColor[person]}`}
-        >
-          {initials(person)}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+          <div
+            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center text-lg sm:text-xl font-bold select-none shrink-0 ${avatarColor[person]}`}
+          >
+            {initials(person)}
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-(--text-primary) tracking-tight truncate">
+              {person}
+            </h1>
+            <p className="mt-0.5 text-sm text-(--text-secondary)">
+              {stats.total} projects · {stats.open} open · {stats.completed}{" "}
+              completed
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-            {person}
-          </h1>
-          <p className="mt-0.5 text-sm text-(--text-secondary)">
-            {stats.total} projects · {stats.open} open · {stats.completed}{" "}
-            completed
-          </p>
-        </div>
+        {person !== "Unassigned" && (
+          <div className="shrink-0">
+            <NewClientButton
+              presetAssignedTo={person}
+              label={`New lead for ${person}`}
+            />
+          </div>
+        )}
       </div>
 
       {/* Filter chips */}

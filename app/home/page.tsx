@@ -3,10 +3,8 @@ import { getClients } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { followUpState } from "@/lib/data";
 
-function money(n: number) {
+function num(n: number) {
   return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(n);
@@ -14,11 +12,13 @@ function money(n: number) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-(--card) border border-(--border) rounded-xl p-5">
-      <p className="text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+    <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+      <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
         {label}
       </p>
-      <p className="text-2xl font-bold text-(--text-primary)">{value}</p>
+      <p className="text-lg sm:text-2xl font-bold text-(--text-primary) truncate">
+        {value}
+      </p>
     </div>
   );
 }
@@ -86,7 +86,7 @@ export default async function HomePage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Stat label="Clients" value={String(clients.length)} />
         <Stat label="Active Projects" value={String(activeProjects)} />
-        <Stat label="Pipeline Value" value={money(pipelineValue)} />
+        <Stat label="Pipeline · AED" value={num(pipelineValue)} />
         <Stat label="Follow-ups Due" value={String(followUpsDue)} />
       </div>
 

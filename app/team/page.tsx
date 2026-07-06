@@ -38,9 +38,9 @@ function StatPill({
   tone: string;
 }) {
   return (
-    <div className="flex flex-col items-center px-3 py-2 rounded-lg bg-(--surface) border border-(--border) min-w-[68px]">
+    <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-(--surface) border border-(--border)">
       <span className={`text-lg font-bold ${tone}`}>{value}</span>
-      <span className="text-[10px] font-medium text-(--text-muted) uppercase tracking-wide text-center leading-tight mt-0.5">
+      <span className="text-[9px] sm:text-[10px] font-medium text-(--text-muted) uppercase tracking-wide text-center leading-tight mt-0.5">
         {label}
       </span>
     </div>
@@ -56,8 +56,11 @@ export default async function TeamPage() {
   // Real salespeople first; the "Unassigned" bucket only appears if it has work.
   const members = SALESPEOPLE.map((person) => {
     const projects = projectsForSalesperson(clients, person);
-    return { person, stats: statsFor(projects) };
-  }).filter((m) => m.person !== "Unassigned" || m.stats.total > 0);
+    const clientCount = clients.filter((c) => c.assignedTo === person).length;
+    return { person, stats: statsFor(projects), clientCount };
+  }).filter(
+    (m) => m.person !== "Unassigned" || m.stats.total > 0 || m.clientCount > 0
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
@@ -72,16 +75,16 @@ export default async function TeamPage() {
       </div>
 
       <div className="space-y-4">
-        {members.map(({ person, stats }) => (
+        {members.map(({ person, stats, clientCount }) => (
           <Link
             key={person}
             href={`/team/${salespersonSlug(person)}`}
-            className="flex items-center justify-between gap-4 bg-(--card) border border-(--border) rounded-xl p-5 hover:border-(--accent)/40 hover:bg-(--surface)/40 transition-colors"
+            className="block bg-(--card) border border-(--border) rounded-xl p-4 sm:p-5 hover:border-(--accent)/40 hover:bg-(--surface)/40 transition-colors"
           >
             {/* Identity */}
-            <div className="flex items-center gap-4 min-w-0">
+            <div className="flex items-center gap-4 min-w-0 mb-4">
               <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 select-none ${avatarColor[person]}`}
+                className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 select-none ${avatarColor[person]}`}
               >
                 {initials(person)}
               </div>
@@ -90,14 +93,14 @@ export default async function TeamPage() {
                   {person}
                 </p>
                 <p className="text-xs text-(--text-muted)">
-                  {stats.total} {stats.total === 1 ? "project" : "projects"} ·{" "}
-                  {stats.open} open
+                  {clientCount} {clientCount === 1 ? "client" : "clients"} ·{" "}
+                  {stats.total} {stats.total === 1 ? "project" : "projects"}
                 </p>
               </div>
             </div>
 
             {/* Stats */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="grid grid-cols-4 gap-2">
               <StatPill label="Total" value={stats.total} tone="text-(--text-primary)" />
               <StatPill label="To Contact" value={stats.pending} tone="text-sky-600 dark:text-sky-400" />
               <StatPill label="Follow-up" value={stats.followUp} tone="text-amber-600 dark:text-amber-400" />

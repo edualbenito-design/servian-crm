@@ -19,6 +19,13 @@ function money(n: number) {
   }).format(n);
 }
 
+function num(n: number) {
+  return new Intl.NumberFormat("en-AE", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
@@ -87,8 +94,8 @@ export default async function DashboardPage() {
         <Kpi label="Leads This Month" value={String(kpis.leadsThisMonth)} />
         <Kpi label="Active Projects" value={String(kpis.activeProjects)} />
         <Kpi label="Approved Projects" value={String(kpis.approvedProjects)} />
-        <Kpi label="Pipeline Value" value={money(kpis.pipelineValue)} />
-        <Kpi label="Won Value" value={money(kpis.wonValue)} />
+        <Kpi label="Pipeline · AED" value={num(kpis.pipelineValue)} />
+        <Kpi label="Won · AED" value={num(kpis.wonValue)} />
         <Kpi label="Follow-ups Due" value={String(kpis.followUpsDue)} />
         <Kpi
           label="Win Rate"
@@ -107,15 +114,20 @@ export default async function DashboardPage() {
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
         {/* Leads by month */}
         <Card title="Leads captured by month">
-          <div className="flex items-end justify-between gap-3 h-40">
+          <div className="flex items-end justify-between gap-2 sm:gap-3 h-44">
             {months.map((m) => (
-              <div key={m.key} className="flex-1 flex flex-col items-center gap-2">
+              <div
+                key={m.key}
+                className="flex-1 h-full flex flex-col items-center justify-end gap-1"
+              >
                 <span className="text-xs font-semibold text-(--text-secondary)">
                   {m.count}
                 </span>
                 <div
-                  className="w-full bg-(--accent) rounded-t-md min-h-[4px] transition-all"
-                  style={{ height: `${(m.count / maxMonth) * 100}%` }}
+                  className="w-full bg-(--accent) rounded-t-md transition-all"
+                  style={{
+                    height: `${Math.max(4, (m.count / maxMonth) * 130)}px`,
+                  }}
                 />
                 <span className="text-xs text-(--text-muted)">{m.label}</span>
               </div>

@@ -158,10 +158,10 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
         </div>
         <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
           <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
-            Portfolio
+            Portfolio · AED
           </p>
-          <p className="text-sm sm:text-3xl font-bold text-(--text-primary) truncate">
-            {formatCurrency(totalPortfolio)}
+          <p className="text-lg sm:text-3xl font-bold text-(--text-primary) truncate">
+            {new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(totalPortfolio)}
           </p>
         </div>
       </div>

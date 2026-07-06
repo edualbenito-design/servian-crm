@@ -30,7 +30,7 @@ type Form = {
   notes: string;
 };
 
-function emptyForm(): Form {
+function emptyForm(assignedTo: Salesperson = "Unassigned"): Form {
   return {
     name: "",
     phone: "",
@@ -39,7 +39,7 @@ function emptyForm(): Form {
     propertyType: "villa",
     renovationType: "",
     leadSource: "referral",
-    assignedTo: "Unassigned",
+    assignedTo,
     capturedBy: "",
     capturedAt: new Date().toISOString().slice(0, 10),
     nextFollowUp: "",
@@ -74,10 +74,16 @@ function Sel({
   );
 }
 
-export function NewClientButton() {
+export function NewClientButton({
+  presetAssignedTo,
+  label = "New Client",
+}: {
+  presetAssignedTo?: Salesperson;
+  label?: string;
+} = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState<Form>(emptyForm);
+  const [f, setF] = useState<Form>(() => emptyForm(presetAssignedTo));
   const [saving, setSaving] = useState(false);
   const closeRef = useRef(() => setOpen(false));
 
@@ -90,7 +96,7 @@ export function NewClientButton() {
   }, []);
 
   function openModal() {
-    setF(emptyForm());
+    setF(emptyForm(presetAssignedTo));
     setOpen(true);
   }
 
@@ -116,7 +122,7 @@ export function NewClientButton() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
-        New Client
+        {label}
       </button>
 
       {open && (
