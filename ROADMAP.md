@@ -41,9 +41,10 @@
   de listas/pipeline/analytics pero sigue en la DB. Aviso visible en lista de clientes y ficha.
 - [x] Cuentas reales de **Alfie** (alfie.infante101786@gmail.com) y **Joana**
   (joanamarieconceja@gmail.com) — rol sales, full_name = "Alfie"/"Joana" (ven su nombre, no el correo)
-- [ ] Crear cuentas de los otros comerciales cuando haya emails: Elsayed, Faizan (rol sales, full_name exacto)
-- [ ] Estructura para leads de RRSS (campos de campaña/UTM) + pool genérico → asignación (manual ahora, round-robin igualitario futuro)
-- [ ] Adjuntar archivos/fotos por proyecto (presupuestos, planos, fotos del sitio)
+- [ ] ⏸️ (BLOQUEADO: faltan sus emails) Crear cuentas de Elsayed y Faizan (rol sales, full_name exacto)
+- [ ] 🔽 (ADICIONAL, no prioritario — boca a boca funciona bien) Estructura para leads de RRSS
+  (campos de campaña/UTM) + pool genérico "Unassigned" → asignación (manual ahora, round-robin futuro)
+- [x] Adjuntar archivos/fotos por proyecto (renders/comprobantes/docs por proyecto, Supabase Storage)
 - [x] **Estados de pago / facturas**: en cada cotización aceptada se registran pagos
   (importe/método/fecha/nota) con resumen Debido/Pagado/Saldo y estado
   (Sin pagar/Parcial/Pagado). Botón para emitir **TAX INVOICE** imprimible
@@ -51,19 +52,14 @@
   en `lib/company.ts` (pendiente de que Sergio lo envíe). % pagado/pendiente con barra
   de progreso + etiqueta de hito por pago (Primer/Segundo/Último pago).
   SQL: `sql/2026-07-07-payments-invoices.sql` + `sql/2026-07-07-payment-milestone.sql`
-- [ ] Botón de WhatsApp directo por cliente
-- [ ] Recordatorios / próxima acción + briefing diario 9am
-- [ ] Desplegar a una URL pública (Vercel) para uso multi-dispositivo
+- [x] Contacto directo WhatsApp/Llamar/Email en la ficha del cliente (opcional futuro: también desde la lista)
+- [ ] ⏸️ (EN PAUSA: espera dominio de Sergio + cuenta Resend) Recordatorios / briefing diario 9am por email
+- [x] Desplegado en Vercel (servian-crm.vercel.app), multi-dispositivo
 
-## 🗄️ Migraciones SQL pendientes de ejecutar en Supabase
-- [x] **Borrado/archivado** (columnas en clients y projects): `sql/2026-07-07-deletion-archive.sql` — corrido.
-- [ ] **Pagos y facturas** (tabla payments + invoice_number/invoiced_at en quotes):
-  `sql/2026-07-07-payments-invoices.sql` — necesario para registrar pagos y emitir facturas.
-- [ ] Columnas de aprobación en projects (ver mensaje del chat):
-  ```sql
-  ALTER TABLE projects
-    ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false,
-    ADD COLUMN IF NOT EXISTS approved_by text,
-    ADD COLUMN IF NOT EXISTS approved_at timestamptz;
-  ```
-- [ ] Trigger blindado de creación de perfiles (ver mensaje del chat)
+## 🗄️ Migraciones SQL en Supabase
+- [x] Borrado/archivado (clients y projects): `sql/2026-07-07-deletion-archive.sql` — corrido.
+- [x] Pagos y facturas (tabla payments + invoice_number/invoiced_at en quotes):
+  `sql/2026-07-07-payments-invoices.sql` — corrido.
+- [ ] Etiqueta de hito en pagos: `sql/2026-07-07-payment-milestone.sql` — pequeño y opcional
+  (los pagos se guardan sin él; solo activa que se guarde la etiqueta Primer/Segundo/Último pago).
+- [x] Columnas de aprobación en projects y trigger de perfiles — ya aplicadas anteriormente.
