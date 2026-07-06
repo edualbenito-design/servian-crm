@@ -139,6 +139,10 @@ export interface Project {
   quotes: Quote[];
   // Attached files (renders, receipts, docs)
   files: ProjectFile[];
+  // Deletion request (commercial asks; a manager confirms → archived)
+  deletionRequestedBy?: string;
+  deletionRequestedAt?: string;
+  deletionReason?: string;
 }
 
 export interface Client {
@@ -158,6 +162,10 @@ export interface Client {
   notes?: string;
   projects: Project[];
   activities: Activity[];
+  // Deletion request (commercial asks; a manager confirms → archived)
+  deletionRequestedBy?: string;
+  deletionRequestedAt?: string;
+  deletionReason?: string;
 }
 
 export const PIPELINE_STAGES: Record<PipelineStage, string> = {

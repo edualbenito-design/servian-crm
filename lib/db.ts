@@ -69,6 +69,10 @@ type DbProject = {
   approved: boolean | null;
   approved_by: string | null;
   approved_at: string | null;
+  deleted_at?: string | null;
+  deletion_requested_by?: string | null;
+  deletion_requested_at?: string | null;
+  deletion_reason?: string | null;
 };
 
 type DbClient = {
@@ -86,6 +90,10 @@ type DbClient = {
   next_follow_up: string | null;
   notes: string | null;
   created_at: string;
+  deleted_at?: string | null;
+  deletion_requested_by?: string | null;
+  deletion_requested_at?: string | null;
+  deletion_reason?: string | null;
   projects: DbProject[];
   activities?: DbActivity[];
   quotes?: DbQuote[];
@@ -114,6 +122,9 @@ function toProject(
     approvedAt: p.approved_at ?? undefined,
     quotes,
     files: [],
+    deletionRequestedBy: p.deletion_requested_by ?? undefined,
+    deletionRequestedAt: p.deletion_requested_at ?? undefined,
+    deletionReason: p.deletion_reason ?? undefined,
   };
 }
 
@@ -152,10 +163,16 @@ function toClient(c: DbClient): Client {
     createdAt: c.created_at ?? undefined,
     nextFollowUp: c.next_follow_up ?? undefined,
     notes: c.notes ?? undefined,
-    projects: c.projects.map((p) =>
-      toProject(p, byProject.get(p.id) ?? [], quotesByProject.get(p.id) ?? [])
-    ),
+    // Hide archived (soft-deleted) projects everywhere.
+    projects: c.projects
+      .filter((p) => !p.deleted_at)
+      .map((p) =>
+        toProject(p, byProject.get(p.id) ?? [], quotesByProject.get(p.id) ?? [])
+      ),
     activities: clientActivities,
+    deletionRequestedBy: c.deletion_requested_by ?? undefined,
+    deletionRequestedAt: c.deletion_requested_at ?? undefined,
+    deletionReason: c.deletion_reason ?? undefined,
   };
 }
 
@@ -172,7 +189,11 @@ export async function getClients(assignedTo?: string): Promise<Client[]> {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data as DbClient[]).map(toClient);
+  // Hide archived (soft-deleted) clients. Filtering in JS keeps this safe even
+  // before the deleted_at column exists (it's simply absent → kept as active).
+  return (data as DbClient[])
+    .filter((c) => !c.deleted_at)
+    .map(toClient);
 }
 
 export async function getQuote(id: string): Promise<Quote | null> {
@@ -207,6 +228,8 @@ export async function getClient(id: string): Promise<Client | null> {
   }
 
   if (error) return null;
+  // Archived clients behave as if they no longer exist.
+  if ((data as DbClient).deleted_at) return null;
   const client = toClient(data as DbClient);
   await attachProjectFiles(client);
   return client;

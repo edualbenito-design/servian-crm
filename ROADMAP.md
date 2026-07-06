@@ -35,7 +35,13 @@
 - [x] Cuentas manager: Eduardo + Sergio
 
 ## ⏳ Pendiente / siguientes pasos
-- [ ] Crear las cuentas reales cuando haya emails: 4 comerciales (rol sales, full_name exacto) + Sergio (manager)
+- [x] **Borrar cliente/proyecto con visto bueno del manager** (archivado recuperable):
+  el comercial solicita el borrado (con motivo), el manager confirma (archiva) o rechaza;
+  los managers archivan directo con confirmación. Soft delete (deleted_at) → desaparece
+  de listas/pipeline/analytics pero sigue en la DB. Aviso visible en lista de clientes y ficha.
+- [x] Cuentas reales de **Alfie** (alfie.infante101786@gmail.com) y **Joana**
+  (joanamarieconceja@gmail.com) — rol sales, full_name = "Alfie"/"Joana" (ven su nombre, no el correo)
+- [ ] Crear cuentas de los otros comerciales cuando haya emails: Elsayed, Faizan (rol sales, full_name exacto)
 - [ ] Estructura para leads de RRSS (campos de campaña/UTM) + pool genérico → asignación (manual ahora, round-robin igualitario futuro)
 - [ ] Adjuntar archivos/fotos por proyecto (presupuestos, planos, fotos del sitio)
 - [ ] Estados de pago / facturas / comprobantes
@@ -44,6 +50,8 @@
 - [ ] Desplegar a una URL pública (Vercel) para uso multi-dispositivo
 
 ## 🗄️ Migraciones SQL pendientes de ejecutar en Supabase
+- [ ] **Borrado/archivado** (columnas en clients y projects): `sql/2026-07-07-deletion-archive.sql`
+  — necesario para que funcionen los botones de borrado. Las lecturas ya son resilientes.
 - [ ] Columnas de aprobación en projects (ver mensaje del chat):
   ```sql
   ALTER TABLE projects

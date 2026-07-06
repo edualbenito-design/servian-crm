@@ -350,6 +350,11 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                         {activeProjectCount(client)} active
                       </span>
                     )}
+                    {client.deletionRequestedBy && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
+                        Deletion requested
+                      </span>
+                    )}
                   </div>
                 </button>
               ))}
@@ -416,6 +421,12 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                                   : "bg-amber-500"
                               }`}
                               title="Follow-up due"
+                            />
+                          )}
+                          {client.deletionRequestedBy && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500 ring-2 ring-amber-500/30"
+                              title={`Deletion requested by ${client.deletionRequestedBy}`}
                             />
                           )}
                         </span>

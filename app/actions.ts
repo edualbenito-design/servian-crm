@@ -312,6 +312,165 @@ export async function setProjectApproval(
   };
 }
 
+// ─── Deletion (archive) with manager sign-off ───────────────────────────────────
+//
+// Company data is never hard-deleted from the UI. A commercial can *request* a
+// deletion; a manager confirms it, which archives the record (sets deleted_at so
+// it disappears from every list but stays recoverable in the database). Managers
+// may archive directly. Requires the deletion columns on clients/projects (see
+// the SQL handed to the user).
+
+// Resolves a project's client so we can reuse the client-level access check.
+async function assertCanAccessProjectClient(projectId: string): Promise<void> {
+  const db = serverClient();
+  const { data } = await db
+    .from("projects")
+    .select("client_id")
+    .eq("id", projectId)
+    .single();
+  if (!data) throw new Error("Project not found.");
+  await assertCanAccessClient(data.client_id);
+}
+
+// Commercial (owner) or manager asks for a client to be deleted.
+export async function requestClientDeletion(
+  clientId: string,
+  reason: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const { error } = await db
+    .from("clients")
+    .update({
+      deletion_requested_by: profile?.name ?? "",
+      deletion_requested_at: new Date().toISOString(),
+      deletion_reason: reason.trim() || null,
+    })
+    .eq("id", clientId);
+  if (error) throw new Error(error.message);
+  await logActivity(
+    clientId,
+    "note",
+    `🗑️ Deletion requested by ${profile?.name ?? "someone"}${
+      reason.trim() ? ` — ${reason.trim()}` : ""
+    }`
+  );
+  revalidatePath("/");
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Manager rejects a pending request, or the owner withdraws their own.
+export async function cancelClientDeletion(clientId: string): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { error } = await db
+    .from("clients")
+    .update({
+      deletion_requested_by: null,
+      deletion_requested_at: null,
+      deletion_reason: null,
+    })
+    .eq("id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Manager confirms the deletion → archive the client (soft delete, recoverable).
+export async function deleteClient(clientId: string): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile || !profile.isManager) {
+    throw new Error("Only managers can delete clients.");
+  }
+  const db = serverClient();
+  const { error } = await db
+    .from("clients")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: profile.name,
+      deletion_requested_by: null,
+      deletion_requested_at: null,
+      deletion_reason: null,
+    })
+    .eq("id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  revalidatePath("/pipeline");
+}
+
+// Commercial (owner) or manager asks for a project to be deleted.
+export async function requestProjectDeletion(
+  clientId: string,
+  projectId: string,
+  reason: string
+): Promise<void> {
+  await assertCanAccessProjectClient(projectId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const { error } = await db
+    .from("projects")
+    .update({
+      deletion_requested_by: profile?.name ?? "",
+      deletion_requested_at: new Date().toISOString(),
+      deletion_reason: reason.trim() || null,
+    })
+    .eq("id", projectId);
+  if (error) throw new Error(error.message);
+  await logActivity(
+    clientId,
+    "note",
+    `🗑️ Project deletion requested by ${profile?.name ?? "someone"}${
+      reason.trim() ? ` — ${reason.trim()}` : ""
+    }`,
+    projectId
+  );
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Manager rejects a pending project request, or the owner withdraws theirs.
+export async function cancelProjectDeletion(
+  clientId: string,
+  projectId: string
+): Promise<void> {
+  await assertCanAccessProjectClient(projectId);
+  const db = serverClient();
+  const { error } = await db
+    .from("projects")
+    .update({
+      deletion_requested_by: null,
+      deletion_requested_at: null,
+      deletion_reason: null,
+    })
+    .eq("id", projectId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Manager confirms → archive the project (soft delete, recoverable).
+export async function deleteProject(
+  clientId: string,
+  projectId: string
+): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile || !profile.isManager) {
+    throw new Error("Only managers can delete projects.");
+  }
+  const db = serverClient();
+  const { error } = await db
+    .from("projects")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: profile.name,
+      deletion_requested_by: null,
+      deletion_requested_at: null,
+      deletion_reason: null,
+    })
+    .eq("id", projectId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/pipeline");
+}
+
 // ─── Quotations ────────────────────────────────────────────────────────────────
 
 type QuoteFields = {

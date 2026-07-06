@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   PIPELINE_STAGES,
   SALESPEOPLE,
@@ -17,7 +18,7 @@ import {
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, createProject, updateProject, addNote, addProjectNote, setProjectApproval } from "@/app/actions";
+import { updateClient, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 
@@ -442,6 +443,196 @@ const PlusIcon = () => (
   </svg>
 );
 
+const TrashIcon = () => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+  </svg>
+);
+
+// ─── deletion (archive) with manager sign-off ─────────────────────────────────
+//
+// One reusable control used for both clients and projects. A commercial requests
+// a deletion (with a reason); a manager confirms (archives) or rejects. Managers
+// can also archive directly. Archiving is recoverable (soft delete in the DB).
+function DeletionZone({
+  kind,
+  isManager,
+  requestedBy,
+  reason,
+  onRequest,
+  onCancel,
+  onDelete,
+}: {
+  kind: "client" | "project";
+  isManager: boolean;
+  requestedBy?: string;
+  reason?: string;
+  onRequest: (reason: string) => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "request" | "confirm">("idle");
+  const [text, setText] = useState("");
+  const pending = !!requestedBy;
+
+  const dangerBtn =
+    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors";
+  const neutralBtn =
+    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-(--text-muted) border border-(--border) hover:text-(--text-primary) hover:border-(--accent)/40 transition-colors";
+
+  // ── A request is pending ────────────────────────────────────────────────────
+  if (pending) {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-900/20 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <span className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
+            <TrashIcon />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              Deletion requested{requestedBy ? ` by ${requestedBy}` : ""}
+            </p>
+            {reason && (
+              <p className="text-sm text-amber-700 dark:text-amber-400/90 mt-0.5 break-words">
+                “{reason}”
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              {isManager ? (
+                <>
+                  <button type="button" onClick={onDelete} className={dangerBtn}>
+                    <TrashIcon />
+                    Approve &amp; archive
+                  </button>
+                  <button type="button" onClick={onCancel} className={neutralBtn}>
+                    Reject
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs text-amber-700 dark:text-amber-400/80">
+                    Waiting for a manager to confirm.
+                  </span>
+                  <button type="button" onClick={onCancel} className={neutralBtn}>
+                    Withdraw
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Manager is confirming a direct archive ──────────────────────────────────
+  if (mode === "confirm") {
+    return (
+      <div className="rounded-lg border border-red-300 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30 px-4 py-3">
+        <p className="text-sm text-red-800 dark:text-red-300">
+          Archive this {kind}? It disappears from the app but stays recoverable in
+          the database.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("idle");
+              onDelete();
+            }}
+            className={dangerBtn}
+          >
+            <TrashIcon />
+            Yes, archive {kind}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("idle")}
+            className={neutralBtn}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Commercial is writing a deletion request ────────────────────────────────
+  if (mode === "request") {
+    return (
+      <div className="rounded-lg border border-(--border) bg-(--surface) px-4 py-3">
+        <p className="text-sm font-medium text-(--text-secondary) mb-2">
+          Request to delete this {kind}
+        </p>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          autoFocus
+          placeholder="Reason (optional) — e.g. duplicate, created by mistake"
+          className={INPUT}
+        />
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("idle");
+              onRequest(text);
+              setText("");
+            }}
+            className={dangerBtn}
+          >
+            Send request
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("idle");
+              setText("");
+            }}
+            className={neutralBtn}
+          >
+            Cancel
+          </button>
+        </div>
+        <p className="text-xs text-(--text-muted) mt-2">
+          A manager must confirm before the {kind} is removed.
+        </p>
+      </div>
+    );
+  }
+
+  // ── Idle: entry point ───────────────────────────────────────────────────────
+  return isManager ? (
+    <button
+      type="button"
+      onClick={() => setMode("confirm")}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+    >
+      <TrashIcon />
+      Delete {kind}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => setMode("request")}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-(--text-muted) border border-(--border) hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-900/60 transition-colors"
+    >
+      <TrashIcon />
+      Request deletion
+    </button>
+  );
+}
+
 // ─── reusable history pieces ──────────────────────────────────────────────────
 
 // Renders a vertical timeline of activity entries (newest first).
@@ -532,6 +723,9 @@ function ProjectCard({
   onEdit,
   onAddNote,
   onToggleApproval,
+  onRequestDeletion,
+  onCancelDeletion,
+  onDelete,
 }: {
   project: Project;
   clientId: string;
@@ -539,6 +733,9 @@ function ProjectCard({
   onEdit: () => void;
   onAddNote: (text: string) => void;
   onToggleApproval: (approve: boolean) => void;
+  onRequestDeletion: (reason: string) => void;
+  onCancelDeletion: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -572,6 +769,12 @@ function ProjectCard({
             <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50 shrink-0">
               <CheckIcon />
               Approved
+            </span>
+          )}
+          {project.deletionRequestedBy && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50 shrink-0">
+              <TrashIcon />
+              Deletion requested
             </span>
           )}
         </div>
@@ -760,6 +963,19 @@ function ProjectCard({
               <Timeline activities={project.activities} />
             </div>
           </div>
+
+          {/* Delete / archive this project */}
+          <div className="mt-6 border-t border-(--border) pt-4">
+            <DeletionZone
+              kind="project"
+              isManager={isManager}
+              requestedBy={project.deletionRequestedBy}
+              reason={project.deletionReason}
+              onRequest={onRequestDeletion}
+              onCancel={onCancelDeletion}
+              onDelete={onDelete}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -771,10 +987,13 @@ function ProjectCard({
 export function ClientDetail({
   initialClient,
   isManager,
+  currentUserName,
 }: {
   initialClient: Client;
   isManager: boolean;
+  currentUserName: string;
 }) {
+  const router = useRouter();
   const [client, setClient] = useState<Client>(initialClient);
 
   // client edit modal
@@ -979,6 +1198,64 @@ export function ClientDetail({
     }
   }
 
+  // ── deletion (archive) handlers ───────────────────────────────────────────────
+
+  function patchProject(projectId: string, fields: Partial<Project>) {
+    setClient((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) =>
+        p.id === projectId ? { ...p, ...fields } : p
+      ),
+    }));
+  }
+
+  async function requestProjectDel(projectId: string, reason: string) {
+    patchProject(projectId, {
+      deletionRequestedBy: currentUserName,
+      deletionReason: reason.trim() || undefined,
+    });
+    await requestProjectDeletion(client.id, projectId, reason);
+  }
+
+  async function cancelProjectDel(projectId: string) {
+    patchProject(projectId, {
+      deletionRequestedBy: undefined,
+      deletionReason: undefined,
+    });
+    await cancelProjectDeletion(client.id, projectId);
+  }
+
+  async function archiveProject(projectId: string) {
+    setClient((prev) => ({
+      ...prev,
+      projects: prev.projects.filter((p) => p.id !== projectId),
+    }));
+    await deleteProject(client.id, projectId);
+  }
+
+  async function requestClientDel(reason: string) {
+    setClient((prev) => ({
+      ...prev,
+      deletionRequestedBy: currentUserName,
+      deletionReason: reason.trim() || undefined,
+    }));
+    await requestClientDeletion(client.id, reason);
+  }
+
+  async function cancelClientDel() {
+    setClient((prev) => ({
+      ...prev,
+      deletionRequestedBy: undefined,
+      deletionReason: undefined,
+    }));
+    await cancelClientDeletion(client.id);
+  }
+
+  async function archiveClient() {
+    await deleteClient(client.id);
+    router.push("/");
+  }
+
   // ── render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -1016,6 +1293,12 @@ export function ClientDetail({
             <p className="mt-0.5 text-sm text-(--text-secondary) truncate">
               {client.location}
             </p>
+            {client.deletionRequestedBy && (
+              <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
+                <TrashIcon />
+                Deletion requested
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -1256,6 +1539,27 @@ export function ClientDetail({
               </div>
             </div>
           </div>
+
+          {/* Danger zone: delete / archive this client */}
+          <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-3">
+            <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+              Danger Zone
+            </h2>
+            <p className="text-xs text-(--text-muted)">
+              {isManager
+                ? "Archiving removes the client from the app. It stays recoverable in the database."
+                : "You can request a manager to delete this client."}
+            </p>
+            <DeletionZone
+              kind="client"
+              isManager={isManager}
+              requestedBy={client.deletionRequestedBy}
+              reason={client.deletionReason}
+              onRequest={requestClientDel}
+              onCancel={cancelClientDel}
+              onDelete={archiveClient}
+            />
+          </div>
         </div>
 
         {/* ── Right column: projects ───────────────────────────────────────── */}
@@ -1294,6 +1598,11 @@ export function ClientDetail({
                     onToggleApproval={(approve) =>
                       toggleApproval(project.id, approve)
                     }
+                    onRequestDeletion={(reason) =>
+                      requestProjectDel(project.id, reason)
+                    }
+                    onCancelDeletion={() => cancelProjectDel(project.id)}
+                    onDelete={() => archiveProject(project.id)}
                   />
                 ))}
               </div>

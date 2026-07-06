@@ -20,6 +20,7 @@ export default async function ClientDetailPage(
     <ClientDetail
       initialClient={client}
       isManager={profile?.isManager ?? false}
+      currentUserName={profile?.name ?? ""}
     />
   );
 }
