@@ -7,6 +7,7 @@ const baseLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/", label: "Clients" },
   { href: "/pipeline", label: "Pipeline" },
+  { href: "/calendar", label: "Calendar" },
 ];
 
 const managerLinks = [
