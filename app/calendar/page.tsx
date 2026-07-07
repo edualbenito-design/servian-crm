@@ -1,12 +1,12 @@
-import { getFollowUpAgenda } from "@/lib/db";
+import { getFollowUpAgenda, getAdvanceAlerts } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { CalendarView } from "./CalendarView";
 
 export default async function CalendarPage() {
   const profile = await getCurrentProfile();
-  const agenda = await getFollowUpAgenda(
-    profile?.isManager ? undefined : profile?.name
-  );
+  const scope = profile?.isManager ? undefined : profile?.name;
+  const agenda = await getFollowUpAgenda(scope);
+  const alerts = await getAdvanceAlerts(scope);
 
   // Pending tasks show on their due day; done ones on the day they were done.
   const pending = agenda
@@ -44,6 +44,7 @@ export default async function CalendarPage() {
     <CalendarView
       pending={pending}
       done={done}
+      alerts={alerts}
       isManager={profile?.isManager ?? false}
       currentUserName={profile?.name ?? ""}
     />

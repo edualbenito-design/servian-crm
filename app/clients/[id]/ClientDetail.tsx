@@ -8,6 +8,8 @@ import {
   SALESPEOPLE,
   CAPTURERS,
   followUpState,
+  advanceAlert,
+  ADVANCE_PCT,
   type Client,
   type Project,
   type Activity,
@@ -756,6 +758,9 @@ function ProjectCard({
   onMilestonesChange: (milestones: Milestone[], logNote?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const nowD = new Date();
+  const todayStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}-${String(nowD.getDate()).padStart(2, "0")}`;
+  const advance = advanceAlert(project, todayStr);
   return (
     <div className="hover:bg-(--surface)/30 transition-colors">
       {/* Clickable header (always visible) */}
@@ -793,6 +798,11 @@ function ProjectCard({
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50 shrink-0">
               <TrashIcon />
               Deletion requested
+            </span>
+          )}
+          {advance && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50 shrink-0">
+              ⚠ Advance due
             </span>
           )}
         </div>
@@ -833,6 +843,26 @@ function ProjectCard({
       {/* Expanded detail */}
       {open && (
         <div className="px-6 pb-6 pl-14">
+          {/* Advance-payment warning */}
+          {advance && (
+            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 px-4 py-3">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                ⚠ Advance payment not received
+              </p>
+              <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
+                {advance.daysUntil > 0
+                  ? `Work starts in ${advance.daysUntil} day${advance.daysUntil === 1 ? "" : "s"} (${formatDate(project.startDate)}).`
+                  : advance.daysUntil === 0
+                    ? `Work starts today (${formatDate(project.startDate)}).`
+                    : `Work started ${-advance.daysUntil} day${advance.daysUntil === -1 ? "" : "s"} ago (${formatDate(project.startDate)}).`}{" "}
+                Only {advance.pct}% paid — {ADVANCE_PCT}% advance expected before starting.
+              </p>
+              <p className="text-xs text-(--text-muted) mt-1">
+                {formatCurrency(advance.paid)} of {formatCurrency(advance.committed)} received.
+              </p>
+            </div>
+          )}
+
           {/* Manager sign-off */}
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-(--border) bg-(--surface) px-4 py-3">
             {project.approved ? (

@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, nextPendingFollowUp } from "./data";
+import { quoteTotals, nextPendingFollowUp, advanceAlert } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
@@ -402,6 +402,105 @@ export async function getFollowUpAgenda(
       doneNote: f.doneNote,
     });
   }
+  return out;
+}
+
+// ─── Advance-payment alerts (calendar) ──────────────────────────────────────────
+// Projects whose start date is near/past while the advance isn't covered.
+
+export interface AdvanceAlertRow {
+  projectId: string;
+  projectName: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  assignedTo: string;
+  startDate: string;
+  daysUntil: number;
+  committed: number;
+  paid: number;
+  pct: number;
+}
+
+export async function getAdvanceAlerts(
+  assignedTo?: string
+): Promise<AdvanceAlertRow[]> {
+  const db = serverClient();
+
+  let cq = db
+    .from("clients")
+    .select("id, name, phone, assigned_to, deleted_at, projects(id, name, start_date, status, deleted_at)");
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw, error: cErr } = await cq;
+  if (cErr || !clientsRaw) return [];
+
+  type PRow = { id: string; name: string; start_date: string | null; status: string | null; deleted_at: string | null };
+  type CRow = {
+    id: string;
+    name: string;
+    phone: string | null;
+    assigned_to: string;
+    deleted_at: string | null;
+    projects: PRow[] | null;
+  };
+  const clients = (clientsRaw as CRow[]).filter((c) => !c.deleted_at);
+
+  // Accepted quotes + their payments, grouped by project.
+  const { data: quotesRaw } = await db
+    .from("quotes")
+    .select("id, project_id, items, vat_rate")
+    .eq("status", "accepted");
+  const { data: paysRaw } = await db.from("payments").select("quote_id, amount");
+
+  const paidByQuote = new Map<string, number>();
+  for (const p of (paysRaw as { quote_id: string; amount: number }[] | null) ?? []) {
+    paidByQuote.set(p.quote_id, (paidByQuote.get(p.quote_id) ?? 0) + (Number(p.amount) || 0));
+  }
+  // Build the lightweight quote list advanceAlert() expects, per project.
+  const quotesByProject = new Map<
+    string,
+    { status: QuoteStatus; items: QuoteItem[]; vatRate: number; payments: { amount: number }[] }[]
+  >();
+  for (const q of (quotesRaw as { id: string; project_id: string; items: QuoteItem[] | null; vat_rate: number }[] | null) ?? []) {
+    const list = quotesByProject.get(q.project_id) ?? [];
+    list.push({
+      status: "accepted",
+      items: q.items ?? [],
+      vatRate: Number(q.vat_rate) || 0,
+      payments: [{ amount: paidByQuote.get(q.id) ?? 0 }],
+    });
+    quotesByProject.set(q.project_id, list);
+  }
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const out: AdvanceAlertRow[] = [];
+  for (const c of clients) {
+    for (const p of c.projects ?? []) {
+      if (p.deleted_at) continue;
+      const alert = advanceAlert(
+        {
+          startDate: p.start_date ?? undefined,
+          status: p.status ?? undefined,
+          quotes: quotesByProject.get(p.id) ?? [],
+        },
+        today
+      );
+      if (!alert) continue;
+      out.push({
+        projectId: p.id,
+        projectName: p.name,
+        clientId: c.id,
+        clientName: c.name,
+        clientPhone: c.phone ?? "",
+        assignedTo: c.assigned_to,
+        ...alert,
+      });
+    }
+  }
+  // Most urgent first (most overdue = most negative daysUntil).
+  out.sort((a, b) => a.daysUntil - b.daysUntil);
   return out;
 }
 

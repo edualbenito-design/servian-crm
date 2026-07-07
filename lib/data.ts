@@ -242,6 +242,63 @@ export function quoteTotals(q: { items: QuoteItem[]; vatRate: number }) {
   return { subtotal, vat, total: subtotal + vat };
 }
 
+// ── Advance-payment warning ────────────────────────────────────────────────────
+// Building work shouldn't start before the client has paid the advance. This
+// flags a project whose start date is near (or past) while less than ADVANCE_PCT
+// of its accepted quotes is paid — so the commercial chases the money in time.
+export const ADVANCE_PCT = 50; // % of the job expected before work begins
+export const ADVANCE_LEAD_DAYS = 7; // start warning this many days before start
+
+export interface AdvanceAlert {
+  startDate: string;
+  daysUntil: number; // start − today, in days (negative = already started)
+  committed: number; // total of accepted quotes
+  paid: number; // paid so far on those quotes
+  pct: number; // % paid
+}
+
+function dayDiff(fromYmd: string, toYmd: string): number {
+  const a = new Date(fromYmd + "T00:00:00").getTime();
+  const b = new Date(toYmd + "T00:00:00").getTime();
+  if (isNaN(a) || isNaN(b)) return NaN;
+  return Math.round((b - a) / 86400000);
+}
+
+export function advanceAlert(
+  project: {
+    startDate?: string;
+    status?: string;
+    quotes: {
+      status: QuoteStatus;
+      items: QuoteItem[];
+      vatRate: number;
+      payments: { amount: number }[];
+    }[];
+  },
+  today: string // YYYY-MM-DD (local)
+): AdvanceAlert | null {
+  if (project.status === "completed") return null;
+  if (!project.startDate) return null;
+  const accepted = project.quotes.filter((q) => q.status === "accepted");
+  if (accepted.length === 0) return null;
+
+  let committed = 0;
+  let paid = 0;
+  for (const q of accepted) {
+    committed += quoteTotals(q).total;
+    paid += q.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  }
+  if (committed <= 0) return null;
+
+  const pct = Math.round((paid / committed) * 100);
+  if (pct >= ADVANCE_PCT) return null; // advance already covered
+
+  const daysUntil = dayDiff(today, project.startDate);
+  if (isNaN(daysUntil) || daysUntil > ADVANCE_LEAD_DAYS) return null; // too early
+
+  return { startDate: project.startDate, daysUntil, committed, paid, pct };
+}
+
 export interface Project {
   id: string;
   name: string;

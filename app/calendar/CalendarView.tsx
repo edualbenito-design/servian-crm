@@ -3,6 +3,37 @@
 import { useState } from "react";
 import Link from "next/link";
 import { completeFollowUp, rescheduleFollowUp } from "@/app/actions";
+import { ADVANCE_PCT } from "@/lib/data";
+
+type Alert = {
+  projectId: string;
+  projectName: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  assignedTo: string;
+  startDate: string;
+  daysUntil: number;
+  committed: number;
+  paid: number;
+  pct: number;
+};
+
+function money(n: number) {
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function alertHeadline(a: Alert): string {
+  if (a.daysUntil > 0)
+    return `Starts in ${a.daysUntil} day${a.daysUntil === 1 ? "" : "s"} · advance not received`;
+  if (a.daysUntil === 0) return "Starts today · advance not received";
+  return `Started ${-a.daysUntil} day${a.daysUntil === -1 ? "" : "s"} ago · advance still due`;
+}
 
 type PendingItem = {
   followUpId: string;
@@ -81,11 +112,13 @@ function WhatsApp({ phone }: { phone: string }) {
 export function CalendarView({
   pending: initialPending,
   done: initialDone,
+  alerts,
   isManager,
   currentUserName,
 }: {
   pending: PendingItem[];
   done: DoneItem[];
+  alerts: Alert[];
   isManager: boolean;
   currentUserName: string;
 }) {
@@ -245,6 +278,42 @@ export function CalendarView({
           </button>
         </div>
       </div>
+
+      {/* Advance-payment alerts */}
+      {alerts.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-300 mb-2 flex items-center gap-1.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            Advance payment due before work starts ({alerts.length})
+          </p>
+          <div className="space-y-2">
+            {alerts.map((a) => (
+              <div
+                key={a.projectId}
+                className="flex items-center justify-between gap-3 rounded-lg bg-(--card) border border-(--border) px-3 py-2"
+              >
+                <Link href={`/clients/${a.clientId}`} className="min-w-0 flex-1 group">
+                  <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
+                    {a.clientName} · {a.projectName}
+                    {isManager ? ` · ${a.assignedTo}` : ""}
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    {alertHeadline(a)}
+                  </p>
+                  <p className="text-[11px] text-(--text-muted)">
+                    {a.pct}% paid ({money(a.paid)} of {money(a.committed)}) · need {ADVANCE_PCT}%
+                  </p>
+                </Link>
+                <WhatsApp phone={a.clientPhone} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Month grid */}
