@@ -28,10 +28,12 @@ create index if not exists follow_ups_project_idx on public.follow_ups (project_
 create index if not exists follow_ups_pending_due_idx
   on public.follow_ups (due_date) where status = 'pending';
 
--- Backfill the old single-date follow-ups (clients.next_follow_up + follow_up_note)
--- into pending tasks. Idempotent: skips clients that already have any follow-up.
+-- OPTIONAL backfill: turn any old single-date follow-ups (clients.next_follow_up)
+-- into pending tasks so nothing is lost. Idempotent (skips clients that already
+-- have a follow-up) and depends only on next_follow_up, so it never errors — if
+-- no client had a follow-up date it simply inserts nothing. Safe to skip.
 insert into public.follow_ups (client_id, project_id, due_date, note, status)
-select c.id, null, c.next_follow_up, c.follow_up_note, 'pending'
+select c.id, null, c.next_follow_up, null, 'pending'
 from public.clients c
 where c.next_follow_up is not null
   and c.deleted_at is null
