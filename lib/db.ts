@@ -31,6 +31,8 @@ type DbPayment = {
   note: string | null;
   created_by: string | null;
   created_at: string;
+  receipt_path?: string | null;
+  receipt_name?: string | null;
 };
 
 function toPayment(p: DbPayment): Payment {
@@ -46,6 +48,8 @@ function toPayment(p: DbPayment): Payment {
     note: p.note ?? undefined,
     createdBy: p.created_by ?? undefined,
     createdAt: p.created_at,
+    receiptPath: p.receipt_path ?? undefined,
+    receiptName: p.receipt_name ?? undefined,
   };
 }
 
@@ -61,6 +65,8 @@ type DbFollowUp = {
   done_by: string | null;
   created_by: string | null;
   created_at: string;
+  attachment_path?: string | null;
+  attachment_name?: string | null;
 };
 
 function toFollowUp(f: DbFollowUp): FollowUp {
@@ -76,6 +82,8 @@ function toFollowUp(f: DbFollowUp): FollowUp {
     doneBy: f.done_by ?? undefined,
     createdBy: f.created_by ?? undefined,
     createdAt: f.created_at,
+    attachmentPath: f.attachment_path ?? undefined,
+    attachmentName: f.attachment_name ?? undefined,
   };
 }
 
@@ -288,6 +296,13 @@ async function attachFollowUps(
 
   const byClient = new Map<string, FollowUp[]>();
   for (const f of (data as DbFollowUp[]).map(toFollowUp)) {
+    // Sign attachments only for the detail view (avoid extra calls on the list).
+    if (opts.includeDone && f.attachmentPath) {
+      const { data: signed } = await db.storage
+        .from("project-files")
+        .createSignedUrl(f.attachmentPath, 3600);
+      f.attachmentUrl = signed?.signedUrl;
+    }
     const list = byClient.get(f.clientId) ?? [];
     list.push(f);
     byClient.set(f.clientId, list);
@@ -511,6 +526,13 @@ async function attachPayments(client: Client): Promise<void> {
 
   const byQuote = new Map<string, Payment[]>();
   for (const p of (data as DbPayment[]).map(toPayment)) {
+    // Sign the receipt for viewing, if there's one attached.
+    if (p.receiptPath) {
+      const { data: signed } = await db.storage
+        .from("project-files")
+        .createSignedUrl(p.receiptPath, 3600);
+      p.receiptUrl = signed?.signedUrl;
+    }
     const list = byQuote.get(p.quoteId) ?? [];
     list.push(p);
     byQuote.set(p.quoteId, list);

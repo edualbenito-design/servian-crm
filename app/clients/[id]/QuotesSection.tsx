@@ -21,7 +21,10 @@ import {
   addPayment,
   deletePayment,
   createInvoice,
+  attachPaymentReceipt,
+  removePaymentReceipt,
 } from "@/app/actions";
+import { AttachmentControl } from "./AttachmentControl";
 
 const INPUT =
   "w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50 focus:ring-1 focus:ring-(--accent)/20 transition-colors";
@@ -117,6 +120,8 @@ function PaymentsPanel({
   onAdd,
   onDelete,
   onInvoice,
+  onAttachReceipt,
+  onRemoveReceipt,
 }: {
   quote: Quote;
   onAdd: (fields: {
@@ -128,6 +133,8 @@ function PaymentsPanel({
   }) => Promise<void>;
   onDelete: (paymentId: string) => Promise<void>;
   onInvoice: () => Promise<string>;
+  onAttachReceipt: (paymentId: string, file: File) => Promise<void>;
+  onRemoveReceipt: (paymentId: string, path: string) => Promise<void>;
 }) {
   const total = quoteTotals(quote).total;
   const { paid, balance, status, pctPaid } = paymentSummary(total, quote.payments);
@@ -271,16 +278,26 @@ function PaymentsPanel({
                   {p.note ? ` · ${p.note}` : ""}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => onDelete(p.id)}
-                className="shrink-0 text-(--text-muted) hover:text-red-500 transition-colors"
-                title="Remove payment"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <AttachmentControl
+                  attachment={
+                    p.receiptPath ? { name: p.receiptName, url: p.receiptUrl } : null
+                  }
+                  onUpload={(file) => onAttachReceipt(p.id, file)}
+                  onRemove={() => onRemoveReceipt(p.id, p.receiptPath ?? "")}
+                  label="receipt"
+                />
+                <button
+                  type="button"
+                  onClick={() => onDelete(p.id)}
+                  className="text-(--text-muted) hover:text-red-500 transition-colors"
+                  title="Remove payment"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -468,6 +485,41 @@ export function QuotesSection({
     await deletePayment(clientId, paymentId);
   }
 
+  function patchPayment(q: Quote, paymentId: string, patch: Partial<Payment>) {
+    setQuotes((prev) =>
+      prev.map((x) =>
+        x.id === q.id
+          ? {
+              ...x,
+              payments: x.payments.map((p) =>
+                p.id === paymentId ? { ...p, ...patch } : p
+              ),
+            }
+          : x
+      )
+    );
+  }
+
+  async function attachReceipt(q: Quote, paymentId: string, file: File) {
+    const fd = new FormData();
+    fd.set("file", file);
+    const att = await attachPaymentReceipt(clientId, paymentId, fd);
+    patchPayment(q, paymentId, {
+      receiptPath: att.path,
+      receiptName: att.name,
+      receiptUrl: att.url,
+    });
+  }
+
+  async function removeReceipt(q: Quote, paymentId: string, path: string) {
+    patchPayment(q, paymentId, {
+      receiptPath: undefined,
+      receiptName: undefined,
+      receiptUrl: undefined,
+    });
+    await removePaymentReceipt(clientId, paymentId, path);
+  }
+
   async function makeInvoice(q: Quote): Promise<string> {
     const res = await createInvoice(clientId, q.id);
     setQuotes((prev) =>
@@ -586,6 +638,12 @@ export function QuotesSection({
                     onAdd={(fields) => addPay(q, fields)}
                     onDelete={(paymentId) => removePay(q, paymentId)}
                     onInvoice={() => makeInvoice(q)}
+                    onAttachReceipt={(paymentId, file) =>
+                      attachReceipt(q, paymentId, file)
+                    }
+                    onRemoveReceipt={(paymentId, path) =>
+                      removeReceipt(q, paymentId, path)
+                    }
                   />
                 )}
               </div>

@@ -68,6 +68,10 @@ export interface FollowUp {
   doneBy?: string;
   createdBy?: string;
   createdAt: string;
+  // Optional attachment (screenshot of the conversation, proof…)
+  attachmentPath?: string;
+  attachmentName?: string;
+  attachmentUrl?: string; // short-lived signed URL
 }
 
 // Earliest still-pending follow-up in a list (drives the "next follow-up" date
@@ -139,6 +143,10 @@ export interface Payment {
   note?: string;
   createdBy?: string;
   createdAt: string;
+  // Optional proof of payment (bank transfer screenshot, receipt…)
+  receiptPath?: string;
+  receiptName?: string;
+  receiptUrl?: string; // short-lived signed URL
 }
 
 export interface Quote {

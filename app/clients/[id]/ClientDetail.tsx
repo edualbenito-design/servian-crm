@@ -19,7 +19,8 @@ import {
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { AttachmentControl } from "./AttachmentControl";
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 
@@ -731,6 +732,8 @@ function ProjectCard({
   onCompleteFollowUp,
   onRescheduleFollowUp,
   onDeleteFollowUp,
+  onAttachFollowUp,
+  onRemoveFollowUpAttachment,
 }: {
   project: Project;
   clientId: string;
@@ -745,6 +748,8 @@ function ProjectCard({
   onCompleteFollowUp: (id: string, doneNote: string) => Promise<void>;
   onRescheduleFollowUp: (id: string, newDate: string, reason: string) => Promise<void>;
   onDeleteFollowUp: (id: string) => Promise<void>;
+  onAttachFollowUp: (id: string, file: File) => Promise<void>;
+  onRemoveFollowUpAttachment: (id: string, path: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -980,6 +985,8 @@ function ProjectCard({
               onComplete={onCompleteFollowUp}
               onReschedule={onRescheduleFollowUp}
               onDelete={onDeleteFollowUp}
+              onAttach={onAttachFollowUp}
+              onRemoveAttachment={onRemoveFollowUpAttachment}
             />
           </div>
 
@@ -1033,12 +1040,16 @@ function FollowUps({
   onComplete,
   onReschedule,
   onDelete,
+  onAttach,
+  onRemoveAttachment,
 }: {
   followUps: FollowUp[];
   onAdd: (dueDate: string, note: string) => Promise<void>;
   onComplete: (id: string, doneNote: string) => Promise<void>;
   onReschedule: (id: string, newDate: string, reason: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onAttach: (id: string, file: File) => Promise<void>;
+  onRemoveAttachment: (id: string, path: string) => Promise<void>;
 }) {
   const [adding, setAdding] = useState(false);
   const [newDate, setNewDate] = useState("");
@@ -1125,6 +1136,19 @@ function FollowUps({
                   </p>
                 )}
               </div>
+            </div>
+
+            <div>
+              <AttachmentControl
+                attachment={
+                  f.attachmentPath
+                    ? { name: f.attachmentName, url: f.attachmentUrl }
+                    : null
+                }
+                onUpload={(file) => onAttach(f.id, file)}
+                onRemove={() => onRemoveAttachment(f.id, f.attachmentPath ?? "")}
+                label="screenshot"
+              />
             </div>
 
             {action?.id === f.id ? (
@@ -1294,6 +1318,20 @@ function FollowUps({
                       → {f.doneNote}
                     </p>
                   )}
+                  <div className="mt-1.5">
+                    <AttachmentControl
+                      attachment={
+                        f.attachmentPath
+                          ? { name: f.attachmentName, url: f.attachmentUrl }
+                          : null
+                      }
+                      onUpload={(file) => onAttach(f.id, file)}
+                      onRemove={() =>
+                        onRemoveAttachment(f.id, f.attachmentPath ?? "")
+                      }
+                      label="screenshot"
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1543,6 +1581,48 @@ export function ClientDetail({
   async function deleteFollowUpHandler(projectId: string | null, id: string) {
     updateFollowUpList(projectId, (list) => list.filter((f) => f.id !== id));
     await deleteFollowUp(client.id, id);
+  }
+
+  async function attachFollowUpFileHandler(
+    projectId: string | null,
+    id: string,
+    file: File
+  ) {
+    const fd = new FormData();
+    fd.set("file", file);
+    const att = await attachFollowUpFile(client.id, id, fd);
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              attachmentPath: att.path,
+              attachmentName: att.name,
+              attachmentUrl: att.url,
+            }
+          : f
+      )
+    );
+  }
+
+  async function removeFollowUpFileHandler(
+    projectId: string | null,
+    id: string,
+    path: string
+  ) {
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              attachmentPath: undefined,
+              attachmentName: undefined,
+              attachmentUrl: undefined,
+            }
+          : f
+      )
+    );
+    await removeFollowUpFile(client.id, id, path);
   }
 
   // ── project modal ───────────────────────────────────────────────────────────
@@ -1845,6 +1925,10 @@ export function ClientDetail({
               onComplete={(id, n) => completeFollowUpHandler(null, id, n)}
               onReschedule={(id, d, r) => rescheduleFollowUpHandler(null, id, d, r)}
               onDelete={(id) => deleteFollowUpHandler(null, id)}
+              onAttach={(id, file) => attachFollowUpFileHandler(null, id, file)}
+              onRemoveAttachment={(id, path) =>
+                removeFollowUpFileHandler(null, id, path)
+              }
             />
           </div>
 
@@ -2032,6 +2116,12 @@ export function ClientDetail({
                       rescheduleFollowUpHandler(project.id, id, d, r)
                     }
                     onDeleteFollowUp={(id) => deleteFollowUpHandler(project.id, id)}
+                    onAttachFollowUp={(id, file) =>
+                      attachFollowUpFileHandler(project.id, id, file)
+                    }
+                    onRemoveFollowUpAttachment={(id, path) =>
+                      removeFollowUpFileHandler(project.id, id, path)
+                    }
                   />
                 ))}
               </div>

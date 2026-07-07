@@ -1039,3 +1039,123 @@ export async function deleteProjectFile(
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${clientId}`);
 }
+
+// ─── Optional attachments (payment receipts, follow-up screenshots) ──────────────
+// A single optional file stored on a payment or follow-up row (e.g. the bank
+// transfer screenshot the client sends, or a WhatsApp conversation). Reuses the
+// private project-files bucket; the row keeps the path + name.
+
+export interface Attachment {
+  path: string;
+  name: string;
+  url?: string; // short-lived signed URL
+}
+
+// Uploads a file under `prefix/id/…` and returns its path + a signed URL.
+async function uploadAttachmentFile(
+  prefix: string,
+  id: string,
+  file: File
+): Promise<Attachment> {
+  const db = serverClient();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${prefix}/${id}/${Date.now()}-${safeName}`;
+  const { error: upErr } = await db.storage
+    .from(PROJECT_FILES_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (upErr) throw new Error(upErr.message);
+  const { data: signed } = await db.storage
+    .from(PROJECT_FILES_BUCKET)
+    .createSignedUrl(path, 3600);
+  return { path, name: file.name, url: signed?.signedUrl };
+}
+
+// Attach (or replace) the proof of payment on a payment row.
+export async function attachPaymentReceipt(
+  clientId: string,
+  paymentId: string,
+  formData: FormData
+): Promise<Attachment> {
+  await assertCanAccessClient(clientId);
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("No file provided.");
+
+  const att = await uploadAttachmentFile("receipts", paymentId, file);
+  const db = serverClient();
+  const { error } = await db
+    .from("payments")
+    .update({ receipt_path: att.path, receipt_name: att.name })
+    .eq("id", paymentId)
+    .eq("client_id", clientId);
+  if (error) {
+    // Column missing (SQL not run yet) → clean up the orphan upload.
+    await db.storage.from(PROJECT_FILES_BUCKET).remove([att.path]);
+    throw new Error(
+      "Could not save the receipt. Run the attachments SQL migration first."
+    );
+  }
+  await logActivity(clientId, "note", `📎 Payment receipt attached: ${att.name}`);
+  revalidatePath(`/clients/${clientId}`);
+  return att;
+}
+
+export async function removePaymentReceipt(
+  clientId: string,
+  paymentId: string,
+  path: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  if (path) await db.storage.from(PROJECT_FILES_BUCKET).remove([path]);
+  const { error } = await db
+    .from("payments")
+    .update({ receipt_path: null, receipt_name: null })
+    .eq("id", paymentId)
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Attach (or replace) a file on a follow-up (e.g. the conversation screenshot).
+export async function attachFollowUpFile(
+  clientId: string,
+  followUpId: string,
+  formData: FormData
+): Promise<Attachment> {
+  await assertCanAccessClient(clientId);
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("No file provided.");
+
+  const att = await uploadAttachmentFile("follow-ups", followUpId, file);
+  const db = serverClient();
+  const { error } = await db
+    .from("follow_ups")
+    .update({ attachment_path: att.path, attachment_name: att.name })
+    .eq("id", followUpId)
+    .eq("client_id", clientId);
+  if (error) {
+    await db.storage.from(PROJECT_FILES_BUCKET).remove([att.path]);
+    throw new Error(
+      "Could not save the attachment. Run the attachments SQL migration first."
+    );
+  }
+  revalidatePath(`/clients/${clientId}`);
+  return att;
+}
+
+export async function removeFollowUpFile(
+  clientId: string,
+  followUpId: string,
+  path: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  if (path) await db.storage.from(PROJECT_FILES_BUCKET).remove([path]);
+  const { error } = await db
+    .from("follow_ups")
+    .update({ attachment_path: null, attachment_name: null })
+    .eq("id", followUpId)
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+}
