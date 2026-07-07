@@ -232,6 +232,14 @@ usuario:**
   (nueva fecha + porqué) o **marcar hecho** (con nota de resultado, guarda quién/cuándo). Lista de
   pendientes + **historial** de hechos por proyecto/cliente. En `/calendar`: cada tarea su día, con
   botones **Done** y **Move** inline (con nota). Nota pendiente: **adjuntar captura** (Mejora 2).
+- **Hitos de obra (site progress):** por proyecto, checklist de etapas de construcción editable, cada
+  una con su **% acumulado** del total. Marcar etapas avanza una barra de progreso (%=etapa hecha más
+  alta). Plantilla por defecto (cocina) ofrecida en proyectos vacíos. jsonb `projects.milestones`
+  (resiliente, default []). Requiere `sql/2026-07-07-site-progress.sql`. Acción `setProjectMilestones`.
+- **Calendario tipo agenda:** el panel del día se divide en **"To do"** (pendiente, con Done/Move) y
+  **"Done that day"** (registro de lo hecho ese día, con quién y nota). Las tareas hechas aparecen en
+  el día en que se completaron → puedes abrir una fecha pasada y ver la actividad de un comercial.
+  Datos vía `getFollowUpAgenda` (pendientes + hechos). Punto verde en días con actividad completada.
 - **Adjuntos opcionales:** un archivo por **pago** (justificante/captura de la transferencia) y por
   **follow-up** (captura de la conversación). Botón "Attach" compacto (componente `AttachmentControl`);
   se guardan en el bucket privado `project-files` (columnas `receipt_path/name` en payments y
