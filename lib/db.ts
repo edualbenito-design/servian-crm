@@ -1,4 +1,5 @@
 import { serverClient } from "./supabase/server";
+import { quoteTotals } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
 
 type DbQuote = {
@@ -229,6 +230,148 @@ export async function getClients(assignedTo?: string): Promise<Client[]> {
   return (data as DbClient[])
     .filter((c) => !c.deleted_at)
     .map(toClient);
+}
+
+// ─── Collections (money owed) ───────────────────────────────────────────────────
+// A receivable = an ACCEPTED quote whose payments don't cover its total. Built
+// with a handful of bulk queries (not per client) so the panel stays fast.
+
+export interface Receivable {
+  quoteId: string;
+  number: string;
+  invoiceNumber?: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  projectId: string;
+  projectName: string;
+  assignedTo: string;
+  total: number;
+  paid: number;
+  balance: number;
+  status: "unpaid" | "partial";
+  sinceDate: string; // date used for ageing (invoice date, else issue date)
+  ageDays: number;
+  lastPaymentDate?: string;
+}
+
+export interface Collections {
+  receivables: Receivable[];
+  collectedThisMonth: number; // sum of payments recorded in the current month
+}
+
+type DbQuoteLite = {
+  id: string;
+  number: string;
+  project_id: string;
+  client_id: string;
+  items: QuoteItem[] | null;
+  vat_rate: number;
+  issue_date: string;
+  invoice_number: string | null;
+  invoiced_at: string | null;
+};
+
+type DbClientLite = {
+  id: string;
+  name: string;
+  phone: string;
+  assigned_to: string;
+  deleted_at: string | null;
+  projects: { id: string; name: string; deleted_at: string | null }[] | null;
+};
+
+// Pass `assignedTo` to restrict to one salesperson's clients (non-managers).
+export async function getCollections(assignedTo?: string): Promise<Collections> {
+  const db = serverClient();
+
+  // Clients (+ their projects) to resolve names and skip archived ones.
+  let cq = db
+    .from("clients")
+    .select("id, name, phone, assigned_to, deleted_at, projects(id, name, deleted_at)");
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw, error: cErr } = await cq;
+  if (cErr || !clientsRaw) return { receivables: [], collectedThisMonth: 0 };
+
+  const clientById = new Map<string, DbClientLite>();
+  const projectName = new Map<string, string>();
+  const activeProject = new Set<string>();
+  for (const c of (clientsRaw as DbClientLite[]).filter((c) => !c.deleted_at)) {
+    clientById.set(c.id, c);
+    for (const p of c.projects ?? []) {
+      if (p.deleted_at) continue;
+      projectName.set(p.id, p.name);
+      activeProject.add(p.id);
+    }
+  }
+
+  // Only ACCEPTED quotes represent money the client committed to pay.
+  const { data: quotesRaw, error: qErr } = await db
+    .from("quotes")
+    .select("id, number, project_id, client_id, items, vat_rate, issue_date, invoice_number, invoiced_at")
+    .eq("status", "accepted");
+  if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0 };
+
+  // Payments (fail soft if the table isn't there yet).
+  const { data: paysRaw } = await db
+    .from("payments")
+    .select("quote_id, amount, paid_on");
+  const paidByQuote = new Map<string, number>();
+  const lastPayByQuote = new Map<string, string>();
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  let collectedThisMonth = 0;
+  for (const p of (paysRaw as { quote_id: string; amount: number; paid_on: string | null }[] | null) ?? []) {
+    const amt = Number(p.amount) || 0;
+    paidByQuote.set(p.quote_id, (paidByQuote.get(p.quote_id) ?? 0) + amt);
+    if (p.paid_on) {
+      const prev = lastPayByQuote.get(p.quote_id);
+      if (!prev || p.paid_on > prev) lastPayByQuote.set(p.quote_id, p.paid_on);
+      if (p.paid_on.slice(0, 7) === thisMonth) collectedThisMonth += amt;
+    }
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const receivables: Receivable[] = [];
+  for (const q of quotesRaw as DbQuoteLite[]) {
+    const client = clientById.get(q.client_id);
+    if (!client) continue; // archived client, or outside this salesperson's scope
+    if (!activeProject.has(q.project_id)) continue; // archived project
+    const { total } = quoteTotals({ items: q.items ?? [], vatRate: Number(q.vat_rate) || 0 });
+    const paid = paidByQuote.get(q.id) ?? 0;
+    const balance = Math.round((total - paid) * 100) / 100;
+    if (balance <= 0.001) continue; // fully paid → nothing to collect
+
+    const sinceDate = q.invoiced_at?.slice(0, 10) || q.issue_date || "";
+    const since = new Date(sinceDate + "T00:00:00");
+    const ageDays = isNaN(since.getTime())
+      ? 0
+      : Math.max(0, Math.round((today.getTime() - since.getTime()) / 86400000));
+
+    receivables.push({
+      quoteId: q.id,
+      number: q.number,
+      invoiceNumber: q.invoice_number ?? undefined,
+      clientId: q.client_id,
+      clientName: client.name,
+      clientPhone: client.phone,
+      projectId: q.project_id,
+      projectName: projectName.get(q.project_id) ?? "Project",
+      assignedTo: client.assigned_to,
+      total,
+      paid,
+      balance,
+      status: paid <= 0 ? "unpaid" : "partial",
+      sinceDate,
+      ageDays,
+      lastPaymentDate: lastPayByQuote.get(q.id),
+    });
+  }
+
+  // Biggest balances first (that's where the money is).
+  receivables.sort((a, b) => b.balance - a.balance);
+  return { receivables, collectedThisMonth };
 }
 
 export async function getQuote(id: string): Promise<Quote | null> {
