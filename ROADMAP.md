@@ -67,8 +67,9 @@
 - [x] **Hitos de obra (% de avance)**: checklist editable por proyecto, barra de progreso.
   SQL: `sql/2026-07-07-site-progress.sql`
 - [x] **Calendario tipo agenda**: día dividido en To-do / Done that day (historial de lo hecho)
-- [ ] **Aviso de advance payment antes de empezar** (Mejora 3, pendiente): si la obra arranca y no
-  ha entrado el anticipo, avisar al comercial (follow-up automático + aviso en la ficha)
+- [x] **Aviso de advance payment antes de empezar**: si la obra arranca (≤7 días o ya empezó) y no
+  ha entrado el 50%, banner rojo + chip en la ficha del proyecto y aviso arriba del calendario.
+  Sin SQL (calculado desde fecha de inicio + pagos).
 - [x] **Panel de Cobros** (`/collections`): dinero pendiente en cotizaciones aceptadas
   (pendiente total, vencido >30d, cobrado este mes, tramos por antigüedad, pendiente por comercial,
   lista de deudas mayor/más antigua primero con WhatsApp y enlaces). Sin SQL nuevo. Managers todo,

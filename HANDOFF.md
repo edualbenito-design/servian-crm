@@ -232,6 +232,10 @@ usuario:**
   (nueva fecha + porqué) o **marcar hecho** (con nota de resultado, guarda quién/cuándo). Lista de
   pendientes + **historial** de hechos por proyecto/cliente. En `/calendar`: cada tarea su día, con
   botones **Done** y **Move** inline (con nota). Nota pendiente: **adjuntar captura** (Mejora 2).
+- **Aviso de advance payment:** si un proyecto arranca (≤7 días o ya empezó) y sus cotizaciones
+  aceptadas tienen <50% pagado, salta un banner rojo + chip en la ficha del proyecto y un aviso arriba
+  del **calendario** (con WhatsApp + enlace). Calculado (sin SQL): `advanceAlert()` en lib/data.ts y
+  `getAdvanceAlerts()` en lib/db.ts. Umbral `ADVANCE_PCT=50`, ventana `ADVANCE_LEAD_DAYS=7`.
 - **Hitos de obra (site progress):** por proyecto, checklist de etapas de construcción editable, cada
   una con su **% acumulado** del total. Marcar etapas avanza una barra de progreso (%=etapa hecha más
   alta). Plantilla por defecto (cocina) ofrecida en proyectos vacíos. jsonb `projects.milestones`
