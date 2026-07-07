@@ -798,6 +798,17 @@ function ProjectCard({
             <PenIcon />
             Edit
           </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+            title={isManager ? "Delete project" : "Request deletion"}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-(--text-muted) border border-(--border) hover:text-red-500 hover:border-red-300 dark:hover:border-red-900/60 transition-colors"
+          >
+            <TrashIcon />
+          </button>
         </div>
       </div>
 
@@ -849,6 +860,19 @@ function ProjectCard({
                   Approve
                 </button>
               ))}
+          </div>
+
+          {/* Delete / archive this project (or pending request) */}
+          <div className="mb-4">
+            <DeletionZone
+              kind="project"
+              isManager={isManager}
+              requestedBy={project.deletionRequestedBy}
+              reason={project.deletionReason}
+              onRequest={onRequestDeletion}
+              onCancel={onCancelDeletion}
+              onDelete={onDelete}
+            />
           </div>
 
           {/* Description */}
@@ -962,19 +986,6 @@ function ProjectCard({
               />
               <Timeline activities={project.activities} />
             </div>
-          </div>
-
-          {/* Delete / archive this project */}
-          <div className="mt-6 border-t border-(--border) pt-4">
-            <DeletionZone
-              kind="project"
-              isManager={isManager}
-              requestedBy={project.deletionRequestedBy}
-              reason={project.deletionReason}
-              onRequest={onRequestDeletion}
-              onCancel={onCancelDeletion}
-              onDelete={onDelete}
-            />
           </div>
         </div>
       )}
