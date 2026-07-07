@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { completeFollowUp, rescheduleFollowUp } from "@/app/actions";
 
-type Item = {
+type PendingItem = {
   followUpId: string;
   clientId: string;
   name: string;
@@ -14,6 +14,21 @@ type Item = {
   projectName: string | null;
   dueDate: string; // YYYY-MM-DD
   note: string;
+};
+
+type DoneItem = {
+  followUpId: string;
+  clientId: string;
+  name: string;
+  location: string;
+  phone: string;
+  assignedTo: string;
+  projectName: string | null;
+  doneDate: string; // YYYY-MM-DD (day the action was completed)
+  dueDate: string;
+  note: string;
+  doneBy: string;
+  doneNote: string;
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -46,15 +61,37 @@ function formatLong(dateStr: string) {
   });
 }
 
+function WhatsApp({ phone }: { phone: string }) {
+  if (!phone.trim()) return null;
+  return (
+    <a
+      href={`https://wa.me/${phone.replace(/[^0-9]/g, "")}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+      title="WhatsApp"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24.044 12.045.044 5.463.044.104 5.4.101 11.986c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.96 11.96 0 005.71 1.454h.006c6.585 0 11.946-5.357 11.949-11.945a11.9 11.9 0 00-3.481-8.418" />
+      </svg>
+    </a>
+  );
+}
+
 export function CalendarView({
-  items: initialItems,
+  pending: initialPending,
+  done: initialDone,
   isManager,
+  currentUserName,
 }: {
-  items: Item[];
+  pending: PendingItem[];
+  done: DoneItem[];
   isManager: boolean;
+  currentUserName: string;
 }) {
   const today = todayYMD();
-  const [items, setItems] = useState<Item[]>(initialItems);
+  const [pending, setPending] = useState<PendingItem[]>(initialPending);
+  const [done, setDone] = useState<DoneItem[]>(initialDone);
 
   // Inline action state (mark done / move) for the selected item.
   const [action, setAction] = useState<{ id: string; kind: "done" | "move" } | null>(null);
@@ -62,12 +99,18 @@ export function CalendarView({
   const [actionDate, setActionDate] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Group follow-ups by date.
-  const byDate = new Map<string, Item[]>();
-  for (const it of items) {
-    const list = byDate.get(it.dueDate) ?? [];
+  // Group by date: pending on their due day, done on the day they were done.
+  const pendingByDate = new Map<string, PendingItem[]>();
+  for (const it of pending) {
+    const list = pendingByDate.get(it.dueDate) ?? [];
     list.push(it);
-    byDate.set(it.dueDate, list);
+    pendingByDate.set(it.dueDate, list);
+  }
+  const doneByDate = new Map<string, DoneItem[]>();
+  for (const it of done) {
+    const list = doneByDate.get(it.doneDate) ?? [];
+    list.push(it);
+    doneByDate.set(it.doneDate, list);
   }
 
   const initial = new Date(today + "T00:00:00");
@@ -79,7 +122,6 @@ export function CalendarView({
 
   const firstOfMonth = new Date(view.year, view.month, 1);
   const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
-  // Monday-first offset (getDay: 0=Sun..6=Sat).
   const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
 
   function shiftMonth(delta: number) {
@@ -101,23 +143,33 @@ export function CalendarView({
     setActionDate(kind === "move" ? tomorrowYMD() : "");
   }
 
-  async function confirmDone(it: Item) {
+  async function confirmDone(it: PendingItem) {
     setBusy(true);
     try {
       await completeFollowUp(it.clientId, it.followUpId, actionNote);
-      setItems((prev) => prev.filter((x) => x.followUpId !== it.followUpId));
+      // Move it out of pending and into today's "done" list.
+      setPending((prev) => prev.filter((x) => x.followUpId !== it.followUpId));
+      setDone((prev) => [
+        {
+          ...it,
+          doneDate: today,
+          doneBy: currentUserName,
+          doneNote: actionNote,
+        },
+        ...prev,
+      ]);
       setAction(null);
     } finally {
       setBusy(false);
     }
   }
 
-  async function confirmMove(it: Item) {
+  async function confirmMove(it: PendingItem) {
     if (!actionDate) return;
     setBusy(true);
     try {
       await rescheduleFollowUp(it.clientId, it.followUpId, actionDate, actionNote);
-      setItems((prev) =>
+      setPending((prev) =>
         prev.map((x) =>
           x.followUpId === it.followUpId ? { ...x, dueDate: actionDate } : x
         )
@@ -128,9 +180,9 @@ export function CalendarView({
     }
   }
 
-  // Urgency color for a day that has follow-ups.
+  // Urgency color for a day that has PENDING follow-ups.
   function dayTone(dateStr: string): string {
-    const list = byDate.get(dateStr);
+    const list = pendingByDate.get(dateStr);
     if (!list || list.length === 0) return "";
     if (dateStr < today)
       return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
@@ -144,10 +196,13 @@ export function CalendarView({
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
-  const selectedItems = (byDate.get(selected) ?? []).slice().sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
-  const totalDue = items.filter((it) => it.dueDate <= today).length;
+  const selectedPending = (pendingByDate.get(selected) ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const selectedDone = (doneByDate.get(selected) ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const totalDue = pending.filter((it) => it.dueDate <= today).length;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
@@ -158,7 +213,7 @@ export function CalendarView({
             Follow-up Calendar
           </h1>
           <p className="mt-1 text-sm text-(--text-secondary)">
-            Every follow-up on its due day — mark it done or move it right here.
+            To-do on each due day, and a log of what was done — like a work diary.
             {totalDue > 0 && (
               <span className="text-red-500 font-medium"> {totalDue} due now.</span>
             )}
@@ -211,7 +266,8 @@ export function CalendarView({
             {cells.map((day, i) => {
               if (day === null) return <div key={`b${i}`} />;
               const dateStr = ymd(view.year, view.month, day);
-              const dayItems = byDate.get(dateStr) ?? [];
+              const dayPending = pendingByDate.get(dateStr) ?? [];
+              const dayDone = doneByDate.get(dateStr) ?? [];
               const isToday = dateStr === today;
               const isSelected = dateStr === selected;
               const tone = dayTone(dateStr);
@@ -223,16 +279,22 @@ export function CalendarView({
                     setSelected(dateStr);
                     setAction(null);
                   }}
-                  className={`relative aspect-square rounded-lg flex flex-col items-center justify-center gap-1 text-sm transition-colors
+                  className={`relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-colors
                     ${isSelected ? "ring-2 ring-(--accent)" : ""}
                     ${isToday ? "font-bold" : ""}
                     ${tone || "hover:bg-(--surface) text-(--text-secondary)"}`}
                 >
                   <span>{day}</span>
-                  {dayItems.length > 0 && (
+                  {dayPending.length > 0 && (
                     <span className="text-[10px] font-semibold leading-none">
-                      {dayItems.length}
+                      {dayPending.length}
                     </span>
+                  )}
+                  {dayDone.length > 0 && (
+                    <span
+                      className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500"
+                      title={`${dayDone.length} done`}
+                    />
                   )}
                 </button>
               );
@@ -240,7 +302,7 @@ export function CalendarView({
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-4 mt-4 text-[11px] text-(--text-muted)">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-[11px] text-(--text-muted)">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" /> Overdue
             </span>
@@ -250,123 +312,160 @@ export function CalendarView({
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-(--accent) inline-block" /> Upcoming
             </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Done that day
+            </span>
           </div>
         </div>
 
-        {/* Selected day agenda */}
-        <div className="bg-(--card) border border-(--border) rounded-xl overflow-hidden self-start">
-          <div className="px-4 py-3 border-b border-(--border)">
-            <h2 className="text-sm font-semibold text-(--text-primary)">
-              {formatLong(selected)}
-            </h2>
-            <p className="text-xs text-(--text-muted) mt-0.5">
-              {selectedItems.length
-                ? `${selectedItems.length} follow-up${selectedItems.length === 1 ? "" : "s"}`
-                : "No follow-ups"}
-            </p>
-          </div>
-          {selectedItems.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-(--text-muted)">
-              Nothing scheduled. 🌤️
+        {/* Selected day: To do (top) + Done (bottom) */}
+        <div className="space-y-4 self-start">
+          <div className="bg-(--card) border border-(--border) rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-(--border)">
+              <h2 className="text-sm font-semibold text-(--text-primary)">
+                {formatLong(selected)}
+              </h2>
             </div>
-          ) : (
-            <div className="divide-y divide-(--border)">
-              {selectedItems.map((c) => (
-                <div key={c.followUpId} className="px-4 py-3 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <Link href={`/clients/${c.clientId}`} className="min-w-0 flex-1 group">
-                      <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
-                        {c.name}
-                      </p>
-                      <p className="text-xs text-(--text-muted) truncate">
-                        {c.projectName ? c.projectName : c.location || c.phone}
-                        {isManager ? ` · ${c.assignedTo}` : ""}
-                      </p>
-                      {c.note && (
-                        <p className="text-xs text-(--text-secondary) mt-0.5 line-clamp-2">
-                          {c.note}
-                        </p>
-                      )}
-                    </Link>
-                    {c.phone && (
-                      <a
-                        href={`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
-                        title="WhatsApp"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24.044 12.045.044 5.463.044.104 5.4.101 11.986c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.96 11.96 0 005.71 1.454h.006c6.585 0 11.946-5.357 11.949-11.945a11.9 11.9 0 00-3.481-8.418" />
-                        </svg>
-                      </a>
-                    )}
-                  </div>
 
-                  {action?.id === c.followUpId ? (
-                    <div className="space-y-2">
-                      {action.kind === "move" && (
-                        <input
-                          type="date"
-                          value={actionDate}
-                          onChange={(e) => setActionDate(e.target.value)}
-                          className="w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) focus:outline-none focus:border-(--accent)/50"
+            {/* To do */}
+            <div className="px-4 py-2.5 border-b border-(--border) bg-(--surface)/40">
+              <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+                To do · {selectedPending.length}
+              </p>
+            </div>
+            {selectedPending.length === 0 ? (
+              <div className="px-4 py-5 text-center text-sm text-(--text-muted)">
+                Nothing to do. 🌤️
+              </div>
+            ) : (
+              <div className="divide-y divide-(--border)">
+                {selectedPending.map((c) => (
+                  <div key={c.followUpId} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link href={`/clients/${c.clientId}`} className="min-w-0 flex-1 group">
+                        <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
+                          {c.name}
+                        </p>
+                        <p className="text-xs text-(--text-muted) truncate">
+                          {c.projectName ? c.projectName : c.location || c.phone}
+                          {isManager ? ` · ${c.assignedTo}` : ""}
+                        </p>
+                        {c.note && (
+                          <p className="text-xs text-(--text-secondary) mt-0.5 line-clamp-2">
+                            {c.note}
+                          </p>
+                        )}
+                      </Link>
+                      <WhatsApp phone={c.phone} />
+                    </div>
+
+                    {action?.id === c.followUpId ? (
+                      <div className="space-y-2">
+                        {action.kind === "move" && (
+                          <input
+                            type="date"
+                            value={actionDate}
+                            onChange={(e) => setActionDate(e.target.value)}
+                            className="w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) focus:outline-none focus:border-(--accent)/50"
+                          />
+                        )}
+                        <textarea
+                          value={actionNote}
+                          onChange={(e) => setActionNote(e.target.value)}
+                          rows={2}
+                          placeholder={
+                            action.kind === "done"
+                              ? "What did you do? (optional but recommended)"
+                              : "Why move it? (optional)"
+                          }
+                          className="w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50"
                         />
-                      )}
-                      <textarea
-                        value={actionNote}
-                        onChange={(e) => setActionNote(e.target.value)}
-                        rows={2}
-                        placeholder={
-                          action.kind === "done"
-                            ? "What did you do? (optional but recommended)"
-                            : "Why move it? (optional)"
-                        }
-                        className="w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50"
-                      />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={busy || (action.kind === "move" && !actionDate)}
+                            onClick={() =>
+                              action.kind === "done" ? confirmDone(c) : confirmMove(c)
+                            }
+                            className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
+                          >
+                            {busy ? "Saving…" : action.kind === "done" ? "Confirm done" : "Move"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setAction(null)}
+                            className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={busy || (action.kind === "move" && !actionDate)}
-                          onClick={() =>
-                            action.kind === "done" ? confirmDone(c) : confirmMove(c)
-                          }
-                          className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
+                          onClick={() => openAction(c.followUpId, "done")}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
                         >
-                          {busy ? "Saving…" : action.kind === "done" ? "Confirm done" : "Move"}
+                          ✓ Done
                         </button>
                         <button
                           type="button"
-                          disabled={busy}
-                          onClick={() => setAction(null)}
-                          className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
+                          onClick={() => openAction(c.followUpId, "move")}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
                         >
-                          Cancel
+                          Move
                         </button>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openAction(c.followUpId, "done")}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
-                      >
-                        ✓ Done
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openAction(c.followUpId, "move")}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
-                      >
-                        Move
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Done that day */}
+            <div className="px-4 py-2.5 border-y border-(--border) bg-(--surface)/40">
+              <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+                Done that day · {selectedDone.length}
+              </p>
             </div>
-          )}
+            {selectedDone.length === 0 ? (
+              <div className="px-4 py-5 text-center text-sm text-(--text-muted)">
+                Nothing logged yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-(--border)">
+                {selectedDone.map((c) => (
+                  <div key={c.followUpId} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link href={`/clients/${c.clientId}`} className="min-w-0 flex-1 group">
+                        <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
+                          <span className="text-emerald-600 dark:text-emerald-400 mr-1">✓</span>
+                          {c.name}
+                        </p>
+                        <p className="text-xs text-(--text-muted) truncate">
+                          {c.projectName ? c.projectName : c.location || c.phone}
+                          {` · ${c.doneBy || (isManager ? c.assignedTo : "")}`}
+                        </p>
+                        {c.note && (
+                          <p className="text-xs text-(--text-secondary) mt-0.5 line-clamp-2">
+                            {c.note}
+                          </p>
+                        )}
+                        {c.doneNote && (
+                          <p className="text-xs text-(--text-muted) mt-0.5 italic line-clamp-2">
+                            → {c.doneNote}
+                          </p>
+                        )}
+                      </Link>
+                      <WhatsApp phone={c.phone} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,33 +1,51 @@
-import { getClients } from "@/lib/db";
+import { getFollowUpAgenda } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { CalendarView } from "./CalendarView";
 
 export default async function CalendarPage() {
   const profile = await getCurrentProfile();
-  const clients = await getClients(
+  const agenda = await getFollowUpAgenda(
     profile?.isManager ? undefined : profile?.name
   );
 
-  // One calendar item per PENDING follow-up task (client-level + per project).
-  // getClients already attaches only pending follow-ups.
-  const items = clients.flatMap((c) => {
-    const all = [...c.followUps, ...c.projects.flatMap((p) => p.followUps)];
-    return all
-      .filter((f) => f.status === "pending")
-      .map((f) => ({
-        followUpId: f.id,
-        clientId: c.id,
-        name: c.name,
-        location: c.location,
-        phone: c.phone,
-        assignedTo: c.assignedTo,
-        projectName: f.projectId
-          ? c.projects.find((p) => p.id === f.projectId)?.name ?? null
-          : null,
-        dueDate: f.dueDate,
-        note: f.note ?? "",
-      }));
-  });
+  // Pending tasks show on their due day; done ones on the day they were done.
+  const pending = agenda
+    .filter((f) => f.status === "pending")
+    .map((f) => ({
+      followUpId: f.followUpId,
+      clientId: f.clientId,
+      name: f.name,
+      location: f.location,
+      phone: f.phone,
+      assignedTo: f.assignedTo,
+      projectName: f.projectName,
+      dueDate: f.dueDate,
+      note: f.note,
+    }));
 
-  return <CalendarView items={items} isManager={profile?.isManager ?? false} />;
+  const done = agenda
+    .filter((f) => f.status === "done" && f.doneAt)
+    .map((f) => ({
+      followUpId: f.followUpId,
+      clientId: f.clientId,
+      name: f.name,
+      location: f.location,
+      phone: f.phone,
+      assignedTo: f.assignedTo,
+      projectName: f.projectName,
+      doneDate: f.doneAt!.slice(0, 10),
+      dueDate: f.dueDate,
+      note: f.note,
+      doneBy: f.doneBy ?? "",
+      doneNote: f.doneNote ?? "",
+    }));
+
+  return (
+    <CalendarView
+      pending={pending}
+      done={done}
+      isManager={profile?.isManager ?? false}
+      currentUserName={profile?.name ?? ""}
+    />
+  );
 }

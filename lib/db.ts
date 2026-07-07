@@ -321,6 +321,88 @@ async function attachFollowUps(
   }
 }
 
+// ─── Follow-up agenda (calendar) ────────────────────────────────────────────────
+// A flat list of follow-ups (pending + done) with client/project context, for
+// the calendar. Pending show on their due day; done show on the day they were
+// completed — so you can open a past day and see what was actually done.
+
+export interface AgendaFollowUp {
+  followUpId: string;
+  clientId: string;
+  name: string;
+  location: string;
+  phone: string;
+  assignedTo: string;
+  projectName: string | null;
+  status: FollowUpStatus;
+  dueDate: string;
+  note: string;
+  doneAt?: string; // ISO timestamp when completed
+  doneBy?: string;
+  doneNote?: string;
+}
+
+export async function getFollowUpAgenda(
+  assignedTo?: string
+): Promise<AgendaFollowUp[]> {
+  const db = serverClient();
+
+  let cq = db
+    .from("clients")
+    .select("id, name, location, phone, assigned_to, deleted_at, projects(id, name, deleted_at)");
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw, error: cErr } = await cq;
+  if (cErr || !clientsRaw) return [];
+
+  type CRow = {
+    id: string;
+    name: string;
+    location: string | null;
+    phone: string | null;
+    assigned_to: string;
+    deleted_at: string | null;
+    projects: { id: string; name: string; deleted_at: string | null }[] | null;
+  };
+  const clientById = new Map<string, CRow>();
+  const projectName = new Map<string, string>();
+  for (const c of (clientsRaw as CRow[]).filter((c) => !c.deleted_at)) {
+    clientById.set(c.id, c);
+    for (const p of c.projects ?? []) {
+      if (!p.deleted_at) projectName.set(p.id, p.name);
+    }
+  }
+
+  const ids = Array.from(clientById.keys());
+  if (ids.length === 0) return [];
+  const { data: fus, error: fErr } = await db
+    .from("follow_ups")
+    .select("*")
+    .in("client_id", ids);
+  if (fErr || !fus) return [];
+
+  const out: AgendaFollowUp[] = [];
+  for (const f of (fus as DbFollowUp[]).map(toFollowUp)) {
+    const c = clientById.get(f.clientId);
+    if (!c) continue;
+    out.push({
+      followUpId: f.id,
+      clientId: f.clientId,
+      name: c.name,
+      location: c.location ?? "",
+      phone: c.phone ?? "",
+      assignedTo: c.assigned_to,
+      projectName: f.projectId ? projectName.get(f.projectId) ?? null : null,
+      status: f.status,
+      dueDate: f.dueDate,
+      note: f.note ?? "",
+      doneAt: f.doneAt,
+      doneBy: f.doneBy,
+      doneNote: f.doneNote,
+    });
+  }
+  return out;
+}
+
 // ─── Collections (money owed) ───────────────────────────────────────────────────
 // A receivable = an ACCEPTED quote whose payments don't cover its total. Built
 // with a handful of bulk queries (not per client) so the panel stays fast.
