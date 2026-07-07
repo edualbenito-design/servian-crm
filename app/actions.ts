@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -109,39 +109,159 @@ export async function updateClient(clientId: string, fields: ClientFields): Prom
   revalidatePath(`/clients/${clientId}`);
 }
 
-// Sets (or clears) the next follow-up date + note straight from the client
-// page, without opening the full edit modal. Resilient: if the follow_up_note
-// column isn't there yet, it still saves the date.
-export async function updateFollowUp(
-  clientId: string,
-  date: string,
-  note: string
-): Promise<void> {
-  const db = serverClient();
-  const nextDate = date || null;
-  const trimmedNote = note.trim() || null;
+// ─── Follow-up tasks ─────────────────────────────────────────────────────────
+// A follow-up is a task on a project (or general, for early leads). It stays
+// pending — and keeps alerting when overdue — until it's marked done or moved.
+// Every action carries a note (the "why"). See the follow_ups table SQL.
 
-  let { error } = await db
-    .from("clients")
-    .update({ next_follow_up: nextDate, follow_up_note: trimmedNote })
-    .eq("id", clientId);
-  if (error) {
-    // follow_up_note column may not exist yet — save at least the date.
-    ({ error } = await db
-      .from("clients")
-      .update({ next_follow_up: nextDate })
-      .eq("id", clientId));
-  }
-  if (error) throw new Error(error.message);
+type DbFollowUpRow = {
+  id: string;
+  client_id: string;
+  project_id: string | null;
+  due_date: string;
+  note: string | null;
+  status: string;
+  done_note: string | null;
+  done_at: string | null;
+  done_by: string | null;
+  created_by: string | null;
+  created_at: string;
+};
 
-  const label = nextDate
-    ? `📅 Follow-up set for ${nextDate}${trimmedNote ? ` — ${trimmedNote}` : ""}`
-    : "📅 Follow-up cleared";
-  await logActivity(clientId, "client_updated", label);
+function rowToFollowUp(f: DbFollowUpRow): FollowUp {
+  return {
+    id: f.id,
+    clientId: f.client_id,
+    projectId: f.project_id ?? null,
+    dueDate: f.due_date,
+    note: f.note ?? undefined,
+    status: (f.status as FollowUpStatus) ?? "pending",
+    doneNote: f.done_note ?? undefined,
+    doneAt: f.done_at ?? undefined,
+    doneBy: f.done_by ?? undefined,
+    createdBy: f.created_by ?? undefined,
+    createdAt: f.created_at,
+  };
+}
+
+function revalidateFollowUp(clientId: string) {
   revalidatePath("/");
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
   revalidatePath(`/clients/${clientId}`);
+}
+
+// Create a new pending follow-up. projectId null = general (client-level).
+export async function addFollowUp(
+  clientId: string,
+  projectId: string | null,
+  dueDate: string,
+  note: string
+): Promise<FollowUp> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const { data, error } = await db
+    .from("follow_ups")
+    .insert({
+      client_id: clientId,
+      project_id: projectId,
+      due_date: dueDate,
+      note: note.trim() || null,
+      status: "pending",
+      created_by: profile?.name ?? null,
+    })
+    .select("*")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Could not create follow-up.");
+
+  await logActivity(
+    clientId,
+    "note",
+    `📅 Follow-up set for ${dueDate}${note.trim() ? ` — ${note.trim()}` : ""}`,
+    projectId
+  );
+  revalidateFollowUp(clientId);
+  return rowToFollowUp(data as DbFollowUpRow);
+}
+
+// Move a pending follow-up to a new date, with a note explaining why.
+export async function rescheduleFollowUp(
+  clientId: string,
+  followUpId: string,
+  newDate: string,
+  reason: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  // Scope by client_id so a user can't touch another client's follow-up.
+  const { data, error } = await db
+    .from("follow_ups")
+    .update({ due_date: newDate })
+    .eq("id", followUpId)
+    .eq("client_id", clientId)
+    .select("project_id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    clientId,
+    "note",
+    `↪ Follow-up moved to ${newDate}${reason.trim() ? ` — ${reason.trim()}` : ""}`,
+    (data?.project_id as string | null) ?? null
+  );
+  revalidateFollowUp(clientId);
+}
+
+// Mark a follow-up done, recording who did it and a result note.
+export async function completeFollowUp(
+  clientId: string,
+  followUpId: string,
+  doneNote: string
+): Promise<{ doneAt: string; doneBy: string }> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  const doneAt = new Date().toISOString();
+  const doneBy = profile?.name ?? "—";
+  const { data, error } = await db
+    .from("follow_ups")
+    .update({
+      status: "done",
+      done_note: doneNote.trim() || null,
+      done_at: doneAt,
+      done_by: doneBy,
+    })
+    .eq("id", followUpId)
+    .eq("client_id", clientId)
+    .select("project_id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    clientId,
+    "note",
+    `✓ Follow-up done by ${doneBy}${doneNote.trim() ? ` — ${doneNote.trim()}` : ""}`,
+    (data?.project_id as string | null) ?? null
+  );
+  revalidateFollowUp(clientId);
+  return { doneAt, doneBy };
+}
+
+// Remove a follow-up entirely (e.g. created by mistake).
+export async function deleteFollowUp(
+  clientId: string,
+  followUpId: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { error } = await db
+    .from("follow_ups")
+    .delete()
+    .eq("id", followUpId)
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  revalidateFollowUp(clientId);
 }
 
 // Creates a new client (manual lead entry) and returns its id.
@@ -176,6 +296,17 @@ export async function createClient(fields: ClientFields): Promise<string> {
 
   if (error || !data) throw new Error(error?.message ?? "Failed to create client.");
   await logActivity(data.id, "client_updated", "Client created");
+  // If an initial follow-up date was given, create it as a task too (best
+  // effort — ignored if the follow_ups table isn't there yet).
+  if (fields.nextFollowUp) {
+    await db.from("follow_ups").insert({
+      client_id: data.id,
+      project_id: null,
+      due_date: fields.nextFollowUp,
+      note: null,
+      status: "pending",
+    });
+  }
   revalidatePath("/");
   return data.id;
 }
@@ -225,6 +356,7 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
     suppliers: data.suppliers ?? [],
     approved: false,
     quotes: [],
+    followUps: [],
     files: [],
   };
 }

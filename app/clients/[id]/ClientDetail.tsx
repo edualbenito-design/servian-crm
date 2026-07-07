@@ -12,13 +12,14 @@ import {
   type Project,
   type Activity,
   type ActivityType,
+  type FollowUp,
   type PropertyType,
   type LeadSource,
   type ProjectStatus,
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, updateFollowUp, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 
@@ -726,6 +727,10 @@ function ProjectCard({
   onRequestDeletion,
   onCancelDeletion,
   onDelete,
+  onAddFollowUp,
+  onCompleteFollowUp,
+  onRescheduleFollowUp,
+  onDeleteFollowUp,
 }: {
   project: Project;
   clientId: string;
@@ -736,6 +741,10 @@ function ProjectCard({
   onRequestDeletion: (reason: string) => void;
   onCancelDeletion: () => void;
   onDelete: () => void;
+  onAddFollowUp: (dueDate: string, note: string) => Promise<void>;
+  onCompleteFollowUp: (id: string, doneNote: string) => Promise<void>;
+  onRescheduleFollowUp: (id: string, newDate: string, reason: string) => Promise<void>;
+  onDeleteFollowUp: (id: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -960,6 +969,20 @@ function ProjectCard({
             </div>
           </div>
 
+          {/* Follow-ups for this project */}
+          <div className="mt-6 border-t border-(--border) pt-4">
+            <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest mb-3">
+              Follow-ups
+            </p>
+            <FollowUps
+              followUps={project.followUps}
+              onAdd={onAddFollowUp}
+              onComplete={onCompleteFollowUp}
+              onReschedule={onRescheduleFollowUp}
+              onDelete={onDeleteFollowUp}
+            />
+          </div>
+
           {/* Quotations */}
           <QuotesSection
             clientId={clientId}
@@ -993,134 +1016,287 @@ function ProjectCard({
   );
 }
 
-// ─── follow-up card ───────────────────────────────────────────────────────────
-// Prominent, always-visible follow-up editor: pick a date + write a short note
-// ("call on payday"). Saving feeds the Follow-up Calendar and the 9am email.
+// ─── follow-ups ───────────────────────────────────────────────────────────────
+// A list of follow-up tasks (pending first, then a history of done ones). Each
+// action — add, mark done, move — carries a note (the "why"). Used both at
+// client level (general/lead) and inside each project.
 
-function FollowUpCard({
-  nextFollowUp,
-  followUpNote,
-  onSave,
+function tomorrowYMD() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function FollowUps({
+  followUps,
+  onAdd,
+  onComplete,
+  onReschedule,
+  onDelete,
 }: {
-  nextFollowUp?: string;
-  followUpNote?: string;
-  onSave: (date: string, note: string) => Promise<void>;
+  followUps: FollowUp[];
+  onAdd: (dueDate: string, note: string) => Promise<void>;
+  onComplete: (id: string, doneNote: string) => Promise<void>;
+  onReschedule: (id: string, newDate: string, reason: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [date, setDate] = useState(nextFollowUp ?? "");
-  const [note, setNote] = useState(followUpNote ?? "");
-  const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [action, setAction] = useState<{ id: string; kind: "done" | "move" } | null>(null);
+  const [actionNote, setActionNote] = useState("");
+  const [actionDate, setActionDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
-  const state = followUpState(nextFollowUp);
-  const badgeTone =
-    state === "overdue"
-      ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-      : state === "today"
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
-        : "bg-(--surface) border border-(--border) text-(--text-secondary)";
+  const pending = followUps
+    .filter((f) => f.status === "pending")
+    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
+  const done = followUps
+    .filter((f) => f.status === "done")
+    .sort((a, b) => ((a.doneAt ?? "") > (b.doneAt ?? "") ? -1 : 1));
 
-  function openEdit() {
-    setDate(nextFollowUp ?? "");
-    setNote(followUpNote ?? "");
-    setEditing(true);
-  }
-
-  async function save(newDate: string, newNote: string) {
-    setSaving(true);
+  async function submitAdd() {
+    if (!newDate) return;
+    setBusy(true);
     try {
-      await onSave(newDate, newNote);
-      setEditing(false);
+      await onAdd(newDate, newNote);
+      setAdding(false);
+      setNewDate("");
+      setNewNote("");
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  return (
-    <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
-          Next Follow-up
-        </h2>
-        {!editing && (
-          <button
-            type="button"
-            onClick={openEdit}
-            className="text-xs font-semibold text-(--accent) hover:underline"
-          >
-            {nextFollowUp ? "Edit" : "Set"}
-          </button>
-        )}
-      </div>
+  function openAction(id: string, kind: "done" | "move", currentDate?: string) {
+    setAction({ id, kind });
+    setActionNote("");
+    setActionDate(kind === "move" ? currentDate ?? "" : "");
+  }
 
-      {!editing ? (
-        nextFollowUp ? (
-          <div className="space-y-2">
-            <span
-              className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${badgeTone}`}
-            >
-              {formatDate(nextFollowUp)}
-              {state === "overdue" && " · overdue"}
-              {state === "today" && " · today"}
-            </span>
-            {followUpNote && (
-              <p className="text-sm text-(--text-secondary) whitespace-pre-wrap">
-                {followUpNote}
-              </p>
+  async function submitAction() {
+    if (!action) return;
+    if (action.kind === "move" && !actionDate) return;
+    setBusy(true);
+    try {
+      if (action.kind === "done") await onComplete(action.id, actionNote);
+      else await onReschedule(action.id, actionDate, actionNote);
+      setAction(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function badgeTone(due: string) {
+    const s = followUpState(due);
+    return s === "overdue"
+      ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+      : s === "today"
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+        : "bg-(--surface) border border-(--border) text-(--text-secondary)";
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Pending */}
+      {pending.length === 0 && !adding && (
+        <p className="text-sm text-(--text-muted)">No pending follow-up.</p>
+      )}
+      {pending.map((f) => {
+        const s = followUpState(f.dueDate);
+        return (
+          <div
+            key={f.id}
+            className="rounded-lg border border-(--border) bg-(--surface)/40 p-3 space-y-2"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <span
+                  className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${badgeTone(f.dueDate)}`}
+                >
+                  {formatDate(f.dueDate)}
+                  {s === "overdue" && " · overdue"}
+                  {s === "today" && " · today"}
+                </span>
+                {f.note && (
+                  <p className="text-sm text-(--text-secondary) mt-1.5 whitespace-pre-wrap">
+                    {f.note}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {action?.id === f.id ? (
+              <div className="space-y-2 pt-1">
+                {action.kind === "move" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={actionDate}
+                      onChange={(e) => setActionDate(e.target.value)}
+                      className={INPUT}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setActionDate(tomorrowYMD())}
+                      className="shrink-0 px-2.5 py-2 rounded-lg border border-(--border) text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) whitespace-nowrap"
+                    >
+                      Tomorrow
+                    </button>
+                  </div>
+                )}
+                <textarea
+                  value={actionNote}
+                  onChange={(e) => setActionNote(e.target.value)}
+                  rows={2}
+                  placeholder={
+                    action.kind === "done"
+                      ? "What did you do? (e.g. Sent WhatsApp, awaiting payment proof)"
+                      : "Why move it? (e.g. Client asked to call after the weekend)"
+                  }
+                  className={INPUT}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy || (action.kind === "move" && !actionDate)}
+                    onClick={submitAction}
+                    className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
+                  >
+                    {busy ? "Saving…" : action.kind === "done" ? "Confirm done" : "Move"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAction(null)}
+                    className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => openAction(f.id, "done")}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                >
+                  ✓ Done
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAction(f.id, "move", f.dueDate)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
+                >
+                  Move
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(f.id)}
+                  className="ml-auto text-xs font-medium text-(--text-muted) hover:text-red-500 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
             )}
           </div>
-        ) : (
-          <p className="text-sm text-(--text-muted)">
-            No follow-up set. Pick a date to see it on the calendar.
-          </p>
-        )
-      ) : (
-        <div className="space-y-3">
+        );
+      })}
+
+      {/* Add */}
+      {adding ? (
+        <div className="rounded-lg border border-(--border) p-3 space-y-2">
           <div>
             <label className={LABEL}>Date</label>
             <input
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
               className={INPUT}
             />
           </div>
           <div>
             <label className={LABEL}>Note (optional)</label>
             <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
               rows={2}
-              placeholder="e.g. Message on the 28th — that's their payday"
+              placeholder="e.g. Message on the 28th to collect the 1st payment"
               className={INPUT}
             />
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={saving || !date}
-              onClick={() => save(date, note)}
-              className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-2 disabled:opacity-50 transition-opacity"
+              disabled={busy || !newDate}
+              onClick={submitAdd}
+              className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save"}
+              {busy ? "Saving…" : "Add follow-up"}
             </button>
             <button
               type="button"
-              disabled={saving}
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors"
+              disabled={busy}
+              onClick={() => setAdding(false)}
+              className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
             >
               Cancel
             </button>
           </div>
-          {nextFollowUp && (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => save("", "")}
-              className="w-full text-xs font-medium text-red-500 hover:underline"
-            >
-              Clear follow-up
-            </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(true);
+            setNewDate("");
+            setNewNote("");
+          }}
+          className="text-xs font-semibold text-(--accent) hover:underline"
+        >
+          + Add follow-up
+        </button>
+      )}
+
+      {/* Done history */}
+      {done.length > 0 && (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            className="text-xs font-medium text-(--text-muted) hover:text-(--text-secondary)"
+          >
+            {showHistory ? "Hide" : "Show"} done ({done.length})
+          </button>
+          {showHistory && (
+            <div className="mt-2 space-y-2">
+              {done.map((f) => (
+                <div
+                  key={f.id}
+                  className="rounded-lg border border-(--border) p-2.5 opacity-80"
+                >
+                  <div className="flex items-center gap-2 text-xs text-(--text-muted)">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                      ✓ Done
+                    </span>
+                    <span>
+                      {formatDate(f.dueDate)}
+                      {f.doneBy ? ` · by ${f.doneBy}` : ""}
+                    </span>
+                  </div>
+                  {f.note && (
+                    <p className="text-xs text-(--text-secondary) mt-1">{f.note}</p>
+                  )}
+                  {f.doneNote && (
+                    <p className="text-xs text-(--text-muted) mt-1 italic">
+                      → {f.doneNote}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -1270,20 +1446,103 @@ export function ClientDetail({
     await updateClient(client.id, cf);
   }
 
-  // Quick follow-up save (date + note) straight from the sidebar card.
-  async function saveFollowUp(date: string, note: string) {
-    setClient((prev) => ({
-      ...prev,
-      nextFollowUp: date || undefined,
-      followUpNote: note.trim() || undefined,
-    }));
-    pushClientActivity(
-      "client_updated",
-      date
-        ? `📅 Follow-up set for ${date}${note.trim() ? ` — ${note.trim()}` : ""}`
-        : "📅 Follow-up cleared"
+  // ── Follow-up tasks (client-level general, or per project) ──────────────────
+
+  // Updates the right follow-up list: general ones live on the client, project
+  // ones on their project.
+  function updateFollowUpList(
+    projectId: string | null,
+    updater: (list: FollowUp[]) => FollowUp[]
+  ) {
+    setClient((prev) => {
+      if (projectId === null) return { ...prev, followUps: updater(prev.followUps) };
+      return {
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === projectId ? { ...p, followUps: updater(p.followUps) } : p
+        ),
+      };
+    });
+  }
+
+  function pushFollowUpActivity(projectId: string | null, description: string) {
+    if (projectId === null) pushClientActivity("note", description);
+    else pushProjectActivity(projectId, "note", description);
+  }
+
+  async function addFollowUpHandler(
+    projectId: string | null,
+    dueDate: string,
+    note: string
+  ) {
+    const optimistic: FollowUp = {
+      id: `optimistic_${Date.now()}_${Math.random()}`,
+      clientId: client.id,
+      projectId,
+      dueDate,
+      note: note.trim() || undefined,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    updateFollowUpList(projectId, (list) => [...list, optimistic]);
+    pushFollowUpActivity(
+      projectId,
+      `📅 Follow-up set for ${dueDate}${note.trim() ? ` — ${note.trim()}` : ""}`
     );
-    await updateFollowUp(client.id, date, note);
+    const created = await addFollowUp(client.id, projectId, dueDate, note);
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) => (f.id === optimistic.id ? created : f))
+    );
+  }
+
+  async function completeFollowUpHandler(
+    projectId: string | null,
+    id: string,
+    doneNote: string
+  ) {
+    const nowIso = new Date().toISOString();
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              status: "done" as const,
+              doneNote: doneNote.trim() || undefined,
+              doneAt: nowIso,
+              doneBy: currentUserName,
+            }
+          : f
+      )
+    );
+    pushFollowUpActivity(
+      projectId,
+      `✓ Follow-up done by ${currentUserName}${doneNote.trim() ? ` — ${doneNote.trim()}` : ""}`
+    );
+    const res = await completeFollowUp(client.id, id, doneNote);
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) => (f.id === id ? { ...f, doneAt: res.doneAt, doneBy: res.doneBy } : f))
+    );
+  }
+
+  async function rescheduleFollowUpHandler(
+    projectId: string | null,
+    id: string,
+    newDate: string,
+    reason: string
+  ) {
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) => (f.id === id ? { ...f, dueDate: newDate } : f))
+    );
+    pushFollowUpActivity(
+      projectId,
+      `↪ Follow-up moved to ${newDate}${reason.trim() ? ` — ${reason.trim()}` : ""}`
+    );
+    await rescheduleFollowUp(client.id, id, newDate, reason);
+  }
+
+  async function deleteFollowUpHandler(projectId: string | null, id: string) {
+    updateFollowUpList(projectId, (list) => list.filter((f) => f.id !== id));
+    await deleteFollowUp(client.id, id);
   }
 
   // ── project modal ───────────────────────────────────────────────────────────
@@ -1317,6 +1576,7 @@ export function ClientDetail({
         suppliers: parseSuppliers(pf.suppliers),
         approved: false,
         quotes: [],
+        followUps: [],
         files: [],
       };
       setClient((prev) => ({ ...prev, projects: [...prev.projects, optimistic] }));
@@ -1567,12 +1827,26 @@ export function ClientDetail({
             )}
           </div>
 
-          {/* Follow-up */}
-          <FollowUpCard
-            nextFollowUp={client.nextFollowUp}
-            followUpNote={client.followUpNote}
-            onSave={saveFollowUp}
-          />
+          {/* General follow-ups (lead / no specific project) */}
+          <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-3">
+            <div>
+              <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+                Follow-ups
+              </h2>
+              {client.projects.length > 0 && (
+                <p className="text-[11px] text-(--text-muted) mt-1">
+                  General ones here; project-specific ones inside each project.
+                </p>
+              )}
+            </div>
+            <FollowUps
+              followUps={client.followUps}
+              onAdd={(d, n) => addFollowUpHandler(null, d, n)}
+              onComplete={(id, n) => completeFollowUpHandler(null, id, n)}
+              onReschedule={(id, d, r) => rescheduleFollowUpHandler(null, id, d, r)}
+              onDelete={(id) => deleteFollowUpHandler(null, id)}
+            />
+          </div>
 
           {/* Details */}
           <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-4">
@@ -1750,6 +2024,14 @@ export function ClientDetail({
                     }
                     onCancelDeletion={() => cancelProjectDel(project.id)}
                     onDelete={() => archiveProject(project.id)}
+                    onAddFollowUp={(d, n) => addFollowUpHandler(project.id, d, n)}
+                    onCompleteFollowUp={(id, n) =>
+                      completeFollowUpHandler(project.id, id, n)
+                    }
+                    onRescheduleFollowUp={(id, d, r) =>
+                      rescheduleFollowUpHandler(project.id, id, d, r)
+                    }
+                    onDeleteFollowUp={(id) => deleteFollowUpHandler(project.id, id)}
                   />
                 ))}
               </div>
@@ -1913,16 +2195,6 @@ export function ClientDetail({
                   value={cf.capturedAt}
                   onChange={(e) =>
                     setCf((p) => ({ ...p, capturedAt: e.target.value }))
-                  }
-                  className={INPUT}
-                />
-              </Field>
-              <Field label="Next Follow-up" optional>
-                <input
-                  type="date"
-                  value={cf.nextFollowUp}
-                  onChange={(e) =>
-                    setCf((p) => ({ ...p, nextFollowUp: e.target.value }))
                   }
                   className={INPUT}
                 />

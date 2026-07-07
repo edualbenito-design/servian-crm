@@ -8,18 +8,26 @@ export default async function CalendarPage() {
     profile?.isManager ? undefined : profile?.name
   );
 
-  // Only the fields the calendar needs (keeps the client payload small).
-  const items = clients
-    .filter((c) => c.nextFollowUp)
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      location: c.location,
-      phone: c.phone,
-      assignedTo: c.assignedTo,
-      nextFollowUp: c.nextFollowUp!,
-      note: c.followUpNote ?? "",
-    }));
+  // One calendar item per PENDING follow-up task (client-level + per project).
+  // getClients already attaches only pending follow-ups.
+  const items = clients.flatMap((c) => {
+    const all = [...c.followUps, ...c.projects.flatMap((p) => p.followUps)];
+    return all
+      .filter((f) => f.status === "pending")
+      .map((f) => ({
+        followUpId: f.id,
+        clientId: c.id,
+        name: c.name,
+        location: c.location,
+        phone: c.phone,
+        assignedTo: c.assignedTo,
+        projectName: f.projectId
+          ? c.projects.find((p) => p.id === f.projectId)?.name ?? null
+          : null,
+        dueDate: f.dueDate,
+        note: f.note ?? "",
+      }));
+  });
 
   return <CalendarView items={items} isManager={profile?.isManager ?? false} />;
 }

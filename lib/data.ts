@@ -49,6 +49,35 @@ export interface Supplier {
   material: string;
 }
 
+// ── Follow-ups ────────────────────────────────────────────────────────────────
+// A follow-up is a task ("message the client on the 28th to collect the 1st
+// payment"). It belongs to a client and, usually, to a specific project. It
+// stays pending (and keeps alerting when overdue) until it's marked done or
+// rescheduled. Every action carries a note (the "why").
+export type FollowUpStatus = "pending" | "done";
+
+export interface FollowUp {
+  id: string;
+  clientId: string;
+  projectId?: string | null; // the project this is about (null = general/lead)
+  dueDate: string; // YYYY-MM-DD
+  note?: string;
+  status: FollowUpStatus;
+  doneNote?: string; // what was done, added when completed
+  doneAt?: string;
+  doneBy?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
+// Earliest still-pending follow-up in a list (drives the "next follow-up" date
+// shown across the app). Returns undefined if there are none pending.
+export function nextPendingFollowUp(list: FollowUp[]): FollowUp | undefined {
+  return list
+    .filter((f) => f.status === "pending")
+    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0))[0];
+}
+
 export type FileCategory = "render" | "receipt" | "document" | "other";
 
 export const FILE_CATEGORIES: { value: FileCategory; label: string }[] = [
@@ -198,6 +227,8 @@ export interface Project {
   approvedAt?: string;
   // Quotations
   quotes: Quote[];
+  // Follow-up tasks for this project
+  followUps: FollowUp[];
   // Attached files (renders, receipts, docs)
   files: ProjectFile[];
   // Deletion request (commercial asks; a manager confirms → archived)
@@ -224,6 +255,8 @@ export interface Client {
   notes?: string;
   projects: Project[];
   activities: Activity[];
+  // General (no-project) follow-ups — e.g. for early leads before any project
+  followUps: FollowUp[];
   // Deletion request (commercial asks; a manager confirms → archived)
   deletionRequestedBy?: string;
   deletionRequestedAt?: string;

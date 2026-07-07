@@ -1,6 +1,6 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals } from "./data";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson } from "./data";
+import { quoteTotals, nextPendingFollowUp } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus } from "./data";
 
 type DbQuote = {
   id: string;
@@ -46,6 +46,36 @@ function toPayment(p: DbPayment): Payment {
     note: p.note ?? undefined,
     createdBy: p.created_by ?? undefined,
     createdAt: p.created_at,
+  };
+}
+
+type DbFollowUp = {
+  id: string;
+  client_id: string;
+  project_id: string | null;
+  due_date: string;
+  note: string | null;
+  status: string;
+  done_note: string | null;
+  done_at: string | null;
+  done_by: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+function toFollowUp(f: DbFollowUp): FollowUp {
+  return {
+    id: f.id,
+    clientId: f.client_id,
+    projectId: f.project_id ?? null,
+    dueDate: f.due_date,
+    note: f.note ?? undefined,
+    status: (f.status as FollowUpStatus) ?? "pending",
+    doneNote: f.done_note ?? undefined,
+    doneAt: f.done_at ?? undefined,
+    doneBy: f.done_by ?? undefined,
+    createdBy: f.created_by ?? undefined,
+    createdAt: f.created_at,
   };
 }
 
@@ -158,6 +188,7 @@ function toProject(
     approvedBy: p.approved_by ?? undefined,
     approvedAt: p.approved_at ?? undefined,
     quotes,
+    followUps: [],
     files: [],
     deletionRequestedBy: p.deletion_requested_by ?? undefined,
     deletionRequestedAt: p.deletion_requested_at ?? undefined,
@@ -208,6 +239,7 @@ function toClient(c: DbClient): Client {
         toProject(p, byProject.get(p.id) ?? [], quotesByProject.get(p.id) ?? [])
       ),
     activities: clientActivities,
+    followUps: [],
     deletionRequestedBy: c.deletion_requested_by ?? undefined,
     deletionRequestedAt: c.deletion_requested_at ?? undefined,
     deletionReason: c.deletion_reason ?? undefined,
@@ -229,9 +261,49 @@ export async function getClients(assignedTo?: string): Promise<Client[]> {
   if (error) throw new Error(error.message);
   // Hide archived (soft-deleted) clients. Filtering in JS keeps this safe even
   // before the deleted_at column exists (it's simply absent → kept as active).
-  return (data as DbClient[])
+  const clients = (data as DbClient[])
     .filter((c) => !c.deleted_at)
     .map(toClient);
+  // Attach pending follow-up tasks and derive each client's "next follow-up".
+  await attachFollowUps(clients, { includeDone: false });
+  return clients;
+}
+
+// Loads follow-up tasks for a set of clients and attaches them: general
+// (no-project) ones to the client, project-specific ones to their project.
+// Also derives each client's `nextFollowUp`/`followUpNote` (earliest pending)
+// so the list, dashboard and 9am email keep working. Fails soft: if the
+// follow_ups table doesn't exist yet, the legacy next_follow_up column stands.
+async function attachFollowUps(
+  clients: Client[],
+  opts: { includeDone: boolean }
+): Promise<void> {
+  if (clients.length === 0) return;
+  const db = serverClient();
+  const ids = clients.map((c) => c.id);
+  let query = db.from("follow_ups").select("*").in("client_id", ids);
+  if (!opts.includeDone) query = query.eq("status", "pending");
+  const { data, error } = await query.order("due_date", { ascending: true });
+  if (error || !data) return; // table missing → keep legacy behavior
+
+  const byClient = new Map<string, FollowUp[]>();
+  for (const f of (data as DbFollowUp[]).map(toFollowUp)) {
+    const list = byClient.get(f.clientId) ?? [];
+    list.push(f);
+    byClient.set(f.clientId, list);
+  }
+
+  for (const c of clients) {
+    const all = byClient.get(c.id) ?? [];
+    c.followUps = all.filter((f) => !f.projectId);
+    for (const p of c.projects) {
+      p.followUps = all.filter((f) => f.projectId === p.id);
+    }
+    // Tasks are authoritative once the table exists.
+    const next = nextPendingFollowUp(all);
+    c.nextFollowUp = next?.dueDate;
+    c.followUpNote = next?.note;
+  }
 }
 
 // ─── Collections (money owed) ───────────────────────────────────────────────────
@@ -421,6 +493,8 @@ export async function getClient(id: string): Promise<Client | null> {
   const client = toClient(data as DbClient);
   await attachProjectFiles(client);
   await attachPayments(client);
+  // Load every follow-up (pending + done) so the client page shows history.
+  await attachFollowUps([client], { includeDone: true });
   return client;
 }
 
