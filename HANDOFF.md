@@ -88,6 +88,7 @@ lib/
   auth.ts        getCurrentProfile() → { id, email, name, role, isManager }
   analytics.ts   KPIs/funnel del dashboard de managers
   team.ts        Helpers de la pestaña Team
+  collections.ts Cobros: resumen, tramos de antigüedad (ageing) y pendiente por comercial (helpers puros)
   company.ts     Datos de empresa + banco + `trn` (vacío, pendiente Sergio) para PDF/factura
   email.ts       Resend: recipientsByName(), dueFollowUps(), sendFollowUpEmail() + plantilla HTML
   supabase/      server.ts (service key) · ssr.ts (cookies/sesión) · browser.ts (login cliente)
@@ -105,6 +106,7 @@ app/
   dashboard/     Managers: analytics global. Sales: <SalesDashboard/> personal
   pipeline/      page.tsx + KanbanBoard.tsx (8 etapas, drag&drop)
   calendar/      page.tsx + CalendarView.tsx (mes de follow-ups; clic en un lead → su ficha)
+  collections/   page.tsx (Cobros: dinero pendiente en quotes aceptadas; managers todo, sales lo suyo)
   team/          Lista comerciales + [slug]/ (ficha por comercial)
   documents/     Managers: subir/descargar docs de empresa (Storage)
   clients/[id]/  page.tsx + ClientDetail.tsx (ficha; incluye ProjectCard, DeletionZone,
@@ -216,6 +218,10 @@ solo no guarda la etiqueta — la escritura es resiliente).
   **% pagado/pendiente** con barra, estado (Unpaid/Partial/Paid), registro de pagos
   (importe/método/fecha/**hito**/nota) y **TAX INVOICE imprimible** (INV-AÑO-NNNN, ?doc=invoice).
 - **Archivos por proyecto** (renders/comprobantes/docs) → Supabase Storage.
+- **Cobros** (`/collections`): dinero pendiente en cotizaciones **aceptadas** (balance > 0). KPIs
+  (pendiente total, vencido >30d, cobrado este mes), tramos por antigüedad (ageing), pendiente por
+  comercial (managers) y lista de deudas (mayor/más antigua primero) con WhatsApp + enlaces a ficha
+  y factura. Managers ven todo; comerciales solo lo suyo. Sin SQL nuevo (usa quotes+payments).
 - **Pipeline Kanban** 8 etapas con drag & drop.
 - **Login con roles**, protección de rutas.
 - **Dashboard:** managers = analítica global; comerciales = dashboard personal (SalesDashboard).

@@ -1,6 +1,6 @@
 # Servian CRM — Estado del proyecto
 
-Última actualización: 2026-07-05
+Última actualización: 2026-07-07
 
 ## ✅ Hecho
 - CRM: lista de clientes con stats, ficha de cliente, edición
@@ -54,6 +54,10 @@
   de progreso + etiqueta de hito por pago (Primer/Segundo/Último pago).
   SQL: `sql/2026-07-07-payments-invoices.sql` + `sql/2026-07-07-payment-milestone.sql`
 - [x] Contacto directo WhatsApp/Llamar/Email en la ficha del cliente + **WhatsApp directo desde la lista**
+- [x] **Panel de Cobros** (`/collections`): dinero pendiente en cotizaciones aceptadas
+  (pendiente total, vencido >30d, cobrado este mes, tramos por antigüedad, pendiente por comercial,
+  lista de deudas mayor/más antigua primero con WhatsApp y enlaces). Sin SQL nuevo. Managers todo,
+  comerciales lo suyo.
 - [ ] ⏸️ (EN PAUSA: espera dominio de Sergio + cuenta Resend) Recordatorios / briefing diario 9am por email
 - [x] Desplegado en Vercel (servian-crm.vercel.app), multi-dispositivo
 
