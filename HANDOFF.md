@@ -1,44 +1,51 @@
 # HANDOFF — Servian Contracting CRM
 
 > Documento de traspaso para una nueva sesión de Claude Code.
-> Última actualización: 2026-07-06. Léelo entero antes de tocar nada.
+> Última actualización: 2026-07-07. Léelo entero antes de tocar nada.
+> Objetivo: que una sesión nueva continúe SIN leer el historial completo.
 
 ---
 
 ## 1. Objetivo del proyecto
 
-CRM + herramienta de gestión comercial para **Servian Contracting LLC** (empresa de
-construcción / reformas / mantenimiento en Dubái, UAE). Empresa pequeña (4 comerciales
-+ 2 managers). Dos objetivos:
-1. **Negocio:** gestionar leads → clientes → proyectos → cotizaciones → obra, con
-   seguimiento comercial, y captar leads (hoy offline; en el futuro desde RRSS/Instagram).
-2. **Aprendizaje:** el usuario (Eduardo, no programador) aprende a usar Claude Code
-   construyendo esto. **Explica el "qué" y el "por qué" en lenguaje sencillo**, propón
-   ideas proactivamente (rol de "director creativo"), y no des por hecho conocimientos técnicos.
+CRM + herramienta de gestión comercial para **Servian Contracting LLC** (construcción /
+reformas / mantenimiento en Dubái, UAE). Empresa pequeña (4 comerciales + 2 managers).
+Doble objetivo:
+1. **Negocio:** gestionar leads → clientes → proyectos → cotizaciones → obra → **pagos/facturas**,
+   con seguimiento comercial y agenda de follow-ups. Captación hoy boca a boca (funciona bien);
+   RRSS/Instagram en el futuro.
+2. **Aprendizaje:** el usuario (**Eduardo**, no programador) aprende Claude Code construyendo esto.
+   **Explica el "qué" y el "por qué" en lenguaje sencillo**, propón ideas (rol "director creativo"),
+   no des por hecho conocimientos técnicos. **El usuario habla español → responde en español.**
 
-El usuario habla **español**. Responde en español.
+Reglas de interacción: confirma el enfoque antes de construir algo grande; al cerrar cada bloque
+**despliega**, da el **SQL** si hace falta y di **"qué probar"**; no rompas producción.
 
 ---
 
 ## 2. Dónde está todo
 
 - **Proyecto local:** `/Users/edua.benito/servian-crm`
-- **Repo GitHub (privado):** `github.com/edualbenito-design/servian-crm` (rama `main`)
-- **Web en producción:** `https://servian-crm.vercel.app` (Vercel, auto-deploy desde `main`)
-- **Base de datos / Auth / Storage:** Supabase (proyecto ref `leyrgzcdpfygfywjgpfv`)
-- **Credenciales:** en `/Users/edua.benito/servian-crm/.env.local` (gitignored). Variables:
-  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`.
-- **Roadmap vivo:** `ROADMAP.md` (hecho / pendiente). Mantenlo actualizado al cerrar cosas.
+- **Repo GitHub (privado):** `github.com/edualbenito-design/servian-crm` (rama `main`, identidad git ya configurada)
+- **Web en producción:** `https://servian-crm.vercel.app` (Vercel, auto-deploy desde `main`, ~2 min)
+- **DB / Auth / Storage:** Supabase (proyecto ref `leyrgzcdpfygfywjgpfv`)
+- **Credenciales locales:** `/Users/edua.benito/servian-crm/.env.local` (gitignored, `.env*`). Variables:
+  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
+  - `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET` (para el email 9am; ver §11)
+- **Roadmap vivo:** `ROADMAP.md`. **Migraciones SQL:** carpeta `sql/`.
+
+⚠️ **Las variables del email deben añadirse también en Vercel** (Production) para que el cron funcione
+en producción — el `.env.local` NO se despliega. Pendiente de que el usuario las meta en Vercel.
 
 ---
 
-## 3. Stack técnico
+## 3. Stack técnico (versiones reales)
 
-- **Next.js 16.2** (App Router, **Turbopack**), **React 19**, **TypeScript**
-- **Tailwind CSS v4** (¡ojo con la sintaxis, ver §7!)
-- **Supabase**: Postgres + Auth (email/password) + Storage
-- **@supabase/ssr** (sesiones con cookies), **@supabase/supabase-js**
-- **@hello-pangea/dnd** (drag & drop del pipeline Kanban)
+- **Next.js 16.2.9** (App Router, **Turbopack**), **React 19.2.4**, **TypeScript 5**
+- **Tailwind CSS v4** (¡ojo sintaxis, ver §7!)
+- **Supabase**: Postgres + Auth (email/password) + Storage · `@supabase/ssr ^0.12`, `@supabase/supabase-js ^2.110`
+- **@hello-pangea/dnd ^18** (drag & drop del pipeline Kanban)
+- **resend ^6.17** (emails) + **Vercel Cron** (`vercel.json`) para el briefing diario
 - Hosting **Vercel**, código en **GitHub**
 
 ---
@@ -48,20 +55,24 @@ El usuario habla **español**. Responde en español.
 - **Server Components** hacen fetch vía `lib/db.ts` (`getClients`, `getClient`, `getQuote`,
   `getDocuments`). Usan `serverClient()` (lib/supabase/server.ts) con la **SECRET key**
   (service_role, salta RLS).
-- **Escrituras**: Server Actions en `app/actions.ts` (`updateClient`, `createClient`,
-  `createProject`, `updateProject`, `updatePipelineStage`, `addNote`, `addProjectNote`,
-  `setProjectApproval`, quotes CRUD, `uploadProjectFile`, `deleteProjectFile`,
-  `uploadDocument`, `deleteDocument`).
-- **Auth / rol**: `lib/auth.ts` → `getCurrentProfile()`. Lee la sesión con el cliente SSR
-  (cookies, publishable key) y el perfil (rol + nombre) de la tabla `profiles` con la
-  service key. Si no existe perfil, lo crea (upsert, rol 'sales') en el primer login.
-- **Protección de rutas**: `proxy.ts` (NO middleware — ver §7). Redirige a `/login` sin
-  sesión y de `/login` a `/` con sesión.
-- **RLS está DESHABILITADA** en todas las tablas. La seguridad se aplica en el **servidor**:
-  toda lectura/escritura pasa por getCurrentProfile y filtra por rol. Managers ven todo;
-  comerciales (sales) solo ven clientes donde `assigned_to == profile.full_name`.
-  ⚠️ Para que un comercial vea sus clientes, su `profiles.full_name` debe coincidir
-  EXACTAMENTE con el valor `assigned_to` de esos clientes.
+- **Escrituras:** Server Actions en `app/actions.ts`. Toda escritura revalida rutas afectadas.
+- **Auth / rol:** `lib/auth.ts` → `getCurrentProfile()`. Lee sesión con el cliente SSR (cookies,
+  publishable key) y el perfil (rol + nombre) de la tabla `profiles` con la service key. Si no
+  existe perfil, lo crea (rol 'sales') en el primer login.
+- **Protección de rutas:** `proxy.ts` (NO middleware — Next 16 lo renombró). Redirige a `/login`
+  sin sesión y de `/login` a `/` con sesión.
+- **RLS DESHABILITADA en todas las tablas.** La seguridad se aplica en el **servidor**: cada
+  lectura/escritura pasa por `getCurrentProfile` y filtra por rol. Managers ven todo; comerciales
+  (sales) solo ven clientes donde `assigned_to == profile.full_name`.
+  ⚠️ Para que un comercial vea sus clientes, su `profiles.full_name` debe coincidir EXACTAMENTE
+  con el `assigned_to` de esos clientes.
+- **Permisos de escritura** (helpers en `app/actions.ts`): `assertCanAccessClient(clientId)` deja
+  pasar a managers y al comercial dueño; acciones sensibles (borrar, aprobar, subir docs de
+  empresa) exigen `profile.isManager`.
+- **Email 9am:** ruta `app/api/cron/daily-followups/route.ts` (protegida por `CRON_SECRET`,
+  header `Authorization: Bearer` o `?key=`). Vercel Cron la llama a las **05:00 UTC = 9:00 Dubái**
+  (`vercel.json`). `lib/email.ts` resuelve name→email (join profiles+auth), agrupa follow-ups
+  vencidos/hoy por comercial y manda a cada uno su lista con Resend.
 
 ---
 
@@ -69,195 +80,232 @@ El usuario habla **español**. Responde en español.
 
 ```
 lib/
-  data.ts        Tipos + constantes (SALESPEOPLE, CAPTURERS, PIPELINE_STAGES,
-                 helpers followUpState/quoteTotals). Fuente de verdad de los tipos.
-  db.ts          Lecturas (getClients/getClient/getQuote/getDocuments) + mapeos DB→tipos.
+  data.ts        Tipos + constantes (SALESPEOPLE, CAPTURERS, PIPELINE_STAGES, PAYMENT_METHODS,
+                 PAYMENT_MILESTONES) + helpers (followUpState, quoteTotals, paymentSummary).
+                 FUENTE DE VERDAD de los tipos (Client, Project, Quote, Payment…).
+  db.ts          Lecturas + mapeos DB→tipos. Filtra archivados (deleted_at) de listas y proyectos.
+                 attachProjectFiles + attachPayments cargan datos anidados con signed URLs / pagos.
   auth.ts        getCurrentProfile() → { id, email, name, role, isManager }
-  analytics.ts   Cálculos del dashboard de managers (KPIs, funnel, por comercial, etc.)
-  team.ts        Helpers de la pestaña Team (projectsForSalesperson, statsFor, slug)
-  company.ts     Datos de empresa + banco para el PDF de cotización
-  supabase/
-    server.ts    serverClient() con service key (lecturas/escrituras servidor)
-    ssr.ts       ssrClient() con cookies (lee sesión)
-    browser.ts   browserClient() (login en cliente)
-proxy.ts         Protección de rutas (Next 16 "proxy", antes middleware)
+  analytics.ts   KPIs/funnel del dashboard de managers
+  team.ts        Helpers de la pestaña Team
+  company.ts     Datos de empresa + banco + `trn` (vacío, pendiente Sergio) para PDF/factura
+  email.ts       Resend: recipientsByName(), dueFollowUps(), sendFollowUpEmail() + plantilla HTML
+  supabase/      server.ts (service key) · ssr.ts (cookies/sesión) · browser.ts (login cliente)
+proxy.ts         Protección de rutas (Next 16 "proxy")
+vercel.json      Cron: /api/cron/daily-followups a las "0 5 * * *" (9am Dubái)
 app/
-  layout.tsx     Cabecera (logo→/home, NavLinks, ThemeToggle, user chip, sign out) + footer.
-                 Logo SVG en components/Logo.tsx. Script anti-flash de tema.
-  globals.css    Tailwind v4 + variables de tema (light :root / dark html.dark) + @custom-variant dark
-  page.tsx       Lista de clientes ("/") → ClientsTable (client component)
-  ClientsTable.tsx   Tabla (desktop) + tarjetas (móvil), buscador, filtros (mes/comercial/Due)
+  layout.tsx     Cabecera (logo→/home, NavLinks, ThemeToggle, user chip, sign out) + footer + tema anti-flash
+  globals.css    Tailwind v4 + variables de tema + @custom-variant dark
+  page.tsx       Lista de clientes ("/") → ClientsTable
+  ClientsTable.tsx   Tabla (desktop) + tarjetas (móvil), buscador, filtros, WhatsApp directo, aviso borrado
   NewClientModal.tsx Botón + modal "New Client" (acepta presetAssignedTo)
-  actions.ts     Todas las Server Actions
-  login/         page.tsx (form) + actions.ts (signIn/signOut)
-  home/          page.tsx  Landing al pinchar el logo (stats + tarjetas de secciones)
-  dashboard/     page.tsx (managers: analytics; sales: <SalesDashboard/> personal)
-                 SalesDashboard.tsx (dashboard personal del comercial)
+  actions.ts     TODAS las Server Actions (clientes, proyectos, quotes, pagos/facturas, borrado, files, docs)
+  login/         page.tsx + actions.ts (signIn/signOut)
+  home/          Landing al pinchar el logo (stats + tarjetas de secciones)
+  dashboard/     Managers: analytics global. Sales: <SalesDashboard/> personal
   pipeline/      page.tsx + KanbanBoard.tsx (8 etapas, drag&drop)
-  team/          page.tsx (lista comerciales) + [slug]/ (page + TeamMemberView.tsx)
-  documents/     page.tsx (managers) + DocumentsClient.tsx (subida/lista)
-  clients/[id]/  page.tsx + ClientDetail.tsx (ficha; contiene ProjectCard, QuotesSection,
-                 FilesSection, historial, contacto rápido WhatsApp/call/email)
-  quotes/[id]/   page.tsx + QuotePrint.tsx (documento imprimible / guardar como PDF)
-  components/    NavLinks.tsx, ThemeToggle.tsx, Logo.tsx
-public/          logo.png, logo-dark.png (logos reales, jpeg convertidos; el PDF usa /logo.png)
+  calendar/      page.tsx + CalendarView.tsx (mes de follow-ups; clic en un lead → su ficha)
+  team/          Lista comerciales + [slug]/ (ficha por comercial)
+  documents/     Managers: subir/descargar docs de empresa (Storage)
+  clients/[id]/  page.tsx + ClientDetail.tsx (ficha; incluye ProjectCard, DeletionZone,
+                 QuotesSection, PaymentsPanel, FilesSection, historial, contacto rápido)
+  quotes/[id]/   page.tsx + QuotePrint.tsx (documento imprimible; ?doc=invoice = TAX INVOICE)
+  api/cron/daily-followups/route.ts   Endpoint del briefing 9am (Resend)
+  components/    NavLinks.tsx (Dashboard/Clients/Pipeline/Calendar + Team/Docs), ThemeToggle.tsx, Logo.tsx
+public/          logo.png, logo-dark.png (el PDF usa /logo.png)
+sql/             Migraciones (una por feature; ejecutar en Supabase → SQL Editor)
 ```
 
 ---
 
-## 6. Modelo de datos (Supabase — TODAS las migraciones ya aplicadas)
+## 6. Modelo de datos (Supabase — RLS deshabilitada en todas)
 
-Tablas (RLS deshabilitada en todas):
-- **clients**: id, name, phone, email, location, property_type
-  (villa/apartment/office/other), `renovation_type` (texto libre), lead_source
-  (referral/instagram/other), assigned_to (comercial que gestiona), `captured_by`
-  (quién captó el lead), `captured_at` (fecha), `next_follow_up` (fecha), notes, created_at
-- **projects**: id, client_id, name, description, budget, status
-  (active/completed/on-hold), pipeline_stage (1..8), start_date, end_date, contractor,
-  team_members (jsonb string[]), suppliers (jsonb {name,material}[]), approved (bool),
-  approved_by, approved_at, created_at
-- **activities**: id, client_id, project_id (nullable → null = historial del cliente;
-  con valor = historial del proyecto), type
-  (note/client_updated/project_created/project_updated/stage_changed), description, created_at
-- **quotes**: id, project_id, client_id, number (Q-YYYY-NNNN), status
-  (draft/sent/accepted/rejected), issue_date, valid_until, vat_rate (default 5),
-  notes, items (jsonb {description,qty,unitPrice}[]), sent_at, created_at
+- **clients**: id, name, phone, email, location, property_type (villa/apartment/office/other),
+  renovation_type (texto), lead_source (referral/instagram/other), assigned_to, captured_by,
+  captured_at, next_follow_up, notes, created_at, **deleted_at/deleted_by** (archivado),
+  **deletion_requested_by/at/reason** (solicitud de borrado)
+- **projects**: id, client_id, name, description, budget, status (active/completed/on-hold),
+  pipeline_stage (1..8), start_date, end_date, contractor, team_members (jsonb string[]),
+  suppliers (jsonb {name,material}[]), approved/approved_by/approved_at, created_at,
+  **deleted_at/deleted_by** + **deletion_requested_by/at/reason**
+- **activities**: id, client_id, project_id (null = historial de cliente; con valor = de proyecto),
+  type (note/client_updated/project_created/project_updated/stage_changed), description, created_at
+- **quotes**: id, project_id, client_id, number (Q-YYYY-NNNN), status (draft/sent/accepted/rejected),
+  issue_date, valid_until, vat_rate (def 5), notes, items (jsonb {description,qty,unitPrice}[]),
+  sent_at, created_at, **invoice_number/invoiced_at** (factura emitida)
+- **payments**: id, quote_id, project_id, client_id, amount, method (cash/bank/cheque/card/other),
+  paid_on, **milestone** (First/Second/Final payment…), note, created_by, created_at
 - **project_files**: id, project_id, client_id, name, path, mime, size, category
   (render/receipt/document/other), uploaded_by, created_at
-- **documents** (empresa, managers): id, name, path, mime, size, uploaded_by, created_at
+- **documents** (empresa): id, name, path, mime, size, uploaded_by, created_at
 - **profiles**: id (=auth.users.id), full_name, role (manager/sales), created_at
-- Trigger `handle_new_user` en auth.users crea el perfil al registrarse (blindado con
-  SET search_path=public + EXCEPTION para no bloquear nunca el alta).
 
-Storage buckets (privados): **company-docs**, **project-files**. Descargas vía signed URLs
-(3600s) generadas en servidor.
+Storage buckets privados: **company-docs**, **project-files** (descargas por signed URLs 3600s).
 
-Personas:
-- **Managers** (ven todo, tienen Dashboard analítico + Team + Docs): **Eduardo**, **Sergio**
-  (studio@serviancontracting.com).
-- **Comerciales** (SALESPEOPLE, ven solo lo suyo): **Joana, Alfie, Elsayed, Faizan**.
-  (aún sin cuentas creadas salvo pruebas; se crean en Supabase Auth y se pone
-  `profiles.full_name` = nombre exacto).
-- **CAPTURERS** (para "captado por") = los 4 comerciales + Eduardo + Sergio.
+**Personas:**
+- **Managers** (ven todo, Dashboard analítico + Team + Docs): **Eduardo** (edu.albenito@gmail.com),
+  **Sergio** (studio@serviancontracting.com).
+- **Comerciales** (SALESPEOPLE, ven solo lo suyo): **Alfie** (alfie.infante101786@gmail.com),
+  **Joana** (joanamarieconceja@gmail.com) → cuentas creadas, full_name = "Alfie"/"Joana".
+  **Elsayed**, **Faizan** → SIN cuenta aún (faltan sus emails).
+- **CAPTURERS** = los 4 comerciales + Eduardo + Sergio.
+
+**Migraciones aplicadas** (todas corridas en Supabase salvo aviso): base + aprobación de proyectos
++ trigger de perfiles + `deletion-archive` + `payments-invoices`. **Pendiente/opcional:**
+`sql/2026-07-07-payment-milestone.sql` (columna `payments.milestone`; los pagos funcionan sin ella,
+solo no guarda la etiqueta — la escritura es resiliente).
 
 ---
 
 ## 7. Convenciones y decisiones técnicas CLAVE (no las rompas)
 
-1. **Tailwind v4 — sintaxis de variables**: usa **`bg-(--accent)`** con PARÉNTESIS, nunca
-   `bg-[--accent]` con corchetes (roto en v4; toda la app se rompió por esto y se arregló
-   convirtiendo ~211 clases). Para clases de tema usa las variables CSS existentes
-   (`--background`, `--surface`, `--card`, `--border`, `--accent`, `--text-primary/secondary/muted`).
-2. **Modo claro/oscuro por CLASE**: `globals.css` tiene `@custom-variant dark (&:where(.dark, .dark *))`.
-   El tema se aplica con la clase `.dark` en `<html>` (ThemeToggle + script anti-flash en layout,
-   persistido en localStorage, default dark). Colores duales: `bg-white dark:bg-zinc-900`, etc.
-3. **`proxy.ts`, no `middleware.ts`**: Next 16 renombró middleware→proxy. El archivo exporta
-   `export async function proxy(request)`.
-4. **Botones de acento**: `bg-(--accent) text-white dark:text-black` (el acento es más oscuro
-   en claro y más brillante en oscuro; el texto se invierte para contraste).
-5. **Escrituras/lecturas resilientes** ante columnas/tablas que puedan faltar: `getClient`
-   reintenta sin `quotes` si falla; `updateClient`/`createClient` reintentan sin
-   `next_follow_up`. Esto permite desplegar ANTES de correr el SQL sin romper producción.
-   Mantén ese patrón si añades columnas nuevas a `clients`.
-6. **Money en móvil**: NO uses `AED 1,234,567` como valor grande (se sale). Pon la unidad en
-   la etiqueta ("Pipeline · AED") y el número formateado como valor.
-7. **Optimistic UI**: `ClientDetail` y las secciones mantienen estado local y actualizan al
-   instante; las Server Actions persisten + `revalidatePath`. Al crear objetos optimistas de
-   Project hay que incluir TODOS los campos nuevos (activities, quotes, files, approved, etc.)
-   o TypeScript falla.
-8. **Estilo**: componentes funcionales, comentarios escuetos en inglés, mismo patrón que el
-   código existente (mira ClientsTable/ClientDetail antes de crear UI nueva).
+1. **Tailwind v4 — variables con PARÉNTESIS:** `bg-(--accent)`, nunca `bg-[--accent]` (roto en v4).
+   Usa las variables de tema existentes (`--background/--surface/--card/--border/--accent/--text-*`).
+2. **Modo claro/oscuro por CLASE:** `@custom-variant dark` en globals.css; clase `.dark` en `<html>`
+   (ThemeToggle + script anti-flash, default dark). Colores duales `bg-white dark:bg-zinc-900`.
+3. **`proxy.ts`, no `middleware.ts`** (Next 16). Exporta `export async function proxy(request)`.
+4. **Botones de acento:** `bg-(--accent) text-white dark:text-black`.
+5. **Lecturas/escrituras RESILIENTES ante columnas que puedan faltar** (permite desplegar ANTES de
+   correr el SQL sin romper producción). Patrón: (a) reintentar sin la columna nueva
+   (`updateClient`, `addPayment` con milestone); (b) filtrar en JS en vez de en la query
+   (archivados en `getClients`). Mantén este patrón al añadir columnas.
+6. **Money en móvil:** NO metas `AED 1,234,567` como valor grande (se sale); unidad en la etiqueta.
+7. **Optimistic UI:** ClientDetail y sus secciones mantienen estado local y actualizan al instante;
+   las Server Actions persisten + revalidatePath. Al crear objetos optimistas de Project/Quote hay
+   que incluir TODOS los campos nuevos (payments, deletion*, etc.) o TypeScript falla.
+8. **Borrado = ARCHIVADO recuperable** (soft delete `deleted_at`), nunca hard delete desde la UI.
+   Comercial **solicita** (deletion_requested_*), manager **confirma** (archiva) o rechaza; manager
+   archiva directo con confirmación. `getClients`/`getClient`/`toClient` ocultan archivados.
+9. **Estilo:** componentes funcionales, comentarios escuetos en inglés, mismo patrón que el código
+   existente (mira ClientsTable/ClientDetail/QuotesSection antes de crear UI nueva).
 
 ---
 
 ## 8. Cómo trabajar (flujo operativo)
 
-- **Comprobar tipos** (no hay test runner): `node_modules/.bin/tsc -p tsconfig.json --noEmit`
-  (ejecútalo con ruta absoluta; el cwd del shell puede resetearse).
-- **Desplegar**: `git add -A && git commit && git push origin main` → Vercel despliega solo
-  en ~2 min. La identidad git ya está configurada (edualbenito-design). Termina los mensajes
-  de commit con `Co-Authored-By: Claude ...`.
-- **DDL (CREATE/ALTER/DROP TABLE)**: NO se puede hacer desde el agente (no hay password de la
-  DB). Dale al usuario el SQL para pegar en Supabase → SQL Editor. Si la columna es en `clients`,
-  hazlo resiliente (§7.5) para poder desplegar antes de que corra el SQL.
-- **SÍ se puede** con la service key vía API REST/Storage/Auth-admin: insert/update/delete de
-  datos, crear buckets de Storage, crear/borrar usuarios de Auth, generar signed URLs. (Se usa
-  un pequeño script node con fetch + .env.local — ver historial de comandos.)
-- **Verificación en navegador**: ⚠️ el login del entorno de PREVIEW (Claude Preview) NO
-  persiste la sesión (cookies) — no intentes verificar pantallas autenticadas ahí, se queda en
-  /login. Las páginas públicas (login) sí se pueden ver. La verificación real de pantallas
-  autenticadas es en **la web de Vercel** (el usuario lo prueba en su móvil/PC). Confía en tsc
-  + revisión de código para lo autenticado.
+- **Comprobar tipos** (no hay test runner): `./node_modules/.bin/tsc -p tsconfig.json --noEmit`
+  (con ruta relativa desde el proyecto; el cwd del shell puede resetearse, usa `cd` explícito).
+- **Desplegar:** `git add -A && git commit && git push origin main` → Vercel despliega solo.
+  Termina los mensajes de commit con `Co-Authored-By: Claude ...`.
+- **DDL (CREATE/ALTER/DROP TABLE):** NO se puede desde el agente (sin password de la DB). Entrega
+  el SQL al usuario para Supabase → SQL Editor y guárdalo en `sql/`. Si es columna en tablas
+  existentes, hazlo resiliente (§7.5) para desplegar antes.
+- **SÍ se puede** con la service key vía API REST/Storage/Auth-admin: insert/update/delete de datos,
+  crear buckets, crear/borrar usuarios de Auth, signed URLs. (Script node con `fetch` + `.env.local`.)
+- **Verificación en navegador:** ⚠️ el login del PREVIEW (Claude Preview) NO persiste sesión — no
+  verifiques ahí pantallas autenticadas (se queda en /login). Verifica lo autenticado en **Vercel**
+  (lo prueba el usuario en su móvil/PC). Confía en `tsc` + revisión de código para lo autenticado.
 
 ---
 
-## 9. Estado actual — FUNCIONALIDADES TERMINADAS
+## 9. Estado actual — FUNCIONALIDADES TERMINADAS (todo en producción)
 
-- CRM: lista de clientes (tabla en desktop, tarjetas en móvil), **buscador**, filtros
-  (mes de captación / comercial / "Due" seguimientos), stats.
-- **Crear cliente manual** (New Client), con captado por / gestionado por / renovación /
-  fecha de captación / próximo seguimiento.
-- Ficha de cliente: editar todo, **contacto rápido WhatsApp/Llamar/Email**, panel de detalles.
-- **Proyectos** (acordeón): equipo, contractor, proveedores; historial por proyecto y por
-  cliente; **visto bueno de manager** (aprobar/revocar).
-- **Cotizaciones** por proyecto: líneas + 5% VAT, número Q-AÑO-NNNN, estados
-  (draft/sent/accepted/rejected), **PDF imprimible con formato de la factura real** (logo,
-  datos de empresa, banco WIO — en `lib/company.ts`).
+- **CRM:** lista de clientes (tabla desktop / tarjetas móvil), **buscador**, filtros (mes /
+  comercial / "Due"), stats, **WhatsApp directo desde la lista**.
+- **Crear cliente manual** (New Client) con captado por / gestionado por / renovación / fechas.
+- **Ficha de cliente:** editar todo, **contacto rápido WhatsApp/Llamar/Email**, panel de detalles.
+- **Proyectos** (acordeón): equipo, contractor, proveedores; historial por proyecto y cliente;
+  **visto bueno de manager** (aprobar/revocar).
+- **Borrar/archivar cliente y proyecto con visto bueno del manager** (recuperable): comercial
+  solicita con motivo → manager aprueba (archiva) o rechaza; manager archiva directo con
+  confirmación. Aviso ámbar en lista y ficha. En proyecto: botón papelera en la cabecera + zona
+  de borrado arriba del detalle.
+- **Cotizaciones** por proyecto: líneas + 5% VAT, Q-AÑO-NNNN, estados, **PDF imprimible** con
+  formato de factura (logo, empresa, banco WIO).
+- **Pagos y facturas:** en cada cotización **aceptada**, panel Payments con **Debido/Pagado/Saldo**,
+  **% pagado/pendiente** con barra, estado (Unpaid/Partial/Paid), registro de pagos
+  (importe/método/fecha/**hito**/nota) y **TAX INVOICE imprimible** (INV-AÑO-NNNN, ?doc=invoice).
 - **Archivos por proyecto** (renders/comprobantes/docs) → Supabase Storage.
 - **Pipeline Kanban** 8 etapas con drag & drop.
-- **Login con roles** (managers vs comerciales), protección de rutas.
-- **Dashboard**: managers = analítica global (KPIs, leads por mes, funnel, fuentes,
-  rendimiento por comercial, duración por tamaño); **comerciales = dashboard personal**
-  (SalesDashboard: sus KPIs, lista de seguimientos del día con WhatsApp, su pipeline).
-- **Team** (managers): stats por comercial + ficha por comercial con filtros y botón
-  "New lead for [nombre]".
-- **Documentos de empresa** (managers): subir/descargar licencias, etc.
-- **Home** al pinchar el logo (landing con stats + tarjetas de secciones).
-- **Tema claro/oscuro**, **logo SVG** (fondo transparente, en cabecera y login), **responsive móvil**.
-- Desplegado en Vercel, dos buckets de Storage privados.
+- **Login con roles**, protección de rutas.
+- **Dashboard:** managers = analítica global; comerciales = dashboard personal (SalesDashboard).
+- **Calendario de follow-ups** (`/calendar`): cada lead en el día que toca seguirlo; clic → su ficha.
+- **Email briefing 9am** (Resend + Vercel Cron): a cada comercial su lista de seguimientos del día
+  con enlaces. **Código listo y desplegado; falta activarlo en producción (ver §10/§11).**
+- **Team** (managers), **Documentos de empresa** (managers), **Home**, tema claro/oscuro, logo SVG,
+  responsive móvil (el usuario confirma que se ve bien).
 
 ---
 
 ## 10. Tareas pendientes (priorizadas)
 
-1. **Revisión final de móvil** por el usuario (probar en su teléfono en Vercel y reportar
-   pantallas apretadas). El grueso del responsive ya está hecho.
-2. **Integrar el logo real en el PDF**: `QuotePrint.tsx` ya intenta `/logo.png`; si el logo
-   real con fondo no queda bien, el usuario puede pasar un PNG con fondo transparente.
-3. **Aviso automático 9am** de seguimientos: requiere servicio de email (Resend) + tarea
-   programada (Vercel Cron). Es "el siguiente nivel" de la agenda; la base (next_follow_up +
-   lista en dashboard) ya existe.
-4. **Estados de pago / facturas** (a partir de cotizaciones aceptadas): marcar pagos,
-   generar factura, guardar comprobante (ya hay archivos por proyecto).
-5. **Captación RRSS**: campos de campaña/UTM en el lead + intake a un pool genérico
-   (assigned_to = "Unassigned") + auto-asignación round-robin futura (por ahora manual).
-6. Crear cuentas reales de los 4 comerciales cuando el usuario tenga sus emails
-   (Auth → Add user, luego `UPDATE profiles SET full_name='<nombre exacto>'`).
+1. **Activar el email 9am en producción** (código ya hecho): el usuario debe **añadir en Vercel**
+   (Production) `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET` y redeploy. Probar con
+   `/api/cron/daily-followups?key=<CRON_SECRET>`. ⚠️ Sin dominio verificado, Resend en modo prueba
+   solo entrega al correo de la cuenta Resend del usuario.
+2. **Verificar dominio en Resend** para enviar desde `crm@serviancontracting.com` a todo el equipo
+   → **depende de que Sergio dé el dominio y acceso DNS** (ver §12). Al verificar, cambiar
+   `RESEND_FROM` al correo del dominio.
+3. **Crear cuentas de Elsayed y Faizan** cuando lleguen sus emails (Auth → Add user, luego
+   `UPDATE profiles SET full_name='<nombre exacto>'`, igual que Alfie/Joana).
+4. **TRN en las facturas:** cuando Sergio lo envíe, ponerlo en `lib/company.ts` (`trn`) y sale solo.
+5. **Correr SQL opcional** `sql/2026-07-07-payment-milestone.sql` (etiqueta de hito en pagos).
+6. **Captación RRSS/Instagram — ON HOLD** (el usuario debe hablar con su agencia para saber cómo
+   integrarlo con los sistemas de ellos). Plan acordado (3 fases):
+   - **Fase 1 (interna):** campo "Campaña" en el lead + vista/filtro "Unassigned" + botón "Asignar a
+     [comercial]" + (opc.) stat de leads sin asignar / por campaña.
+   - **Fase 2 (entrada automática):** página **pública** (link en bio IG / anuncios) que crea el lead
+     en el pool "Unassigned" ya etiquetado con la campaña del enlace.
+   - **Fase 3 (futuro):** reparto round-robin automático entre comerciales.
+   Ya existe base: `lead_source` (incluye instagram) y "Unassigned" como assigned_to.
+7. (Opcional/futuro) Estados de obra, más analítica, etc.
 
 ---
 
-## 11. Problemas conocidos y cómo se resolvieron
+## 11. Variables de entorno y despliegue del email
 
-- **Tailwind v4 corchetes** `bg-[--x]` no funcionan → convertido todo a `bg-(--x)`.
-- **middleware deprecado en Next 16** → renombrado a `proxy.ts` / función `proxy`.
-- **Trigger `handle_new_user` rompía la creación de usuarios** ("Database error creating new
-  user") → reescrito blindado (SET search_path + EXCEPTION) + red de seguridad: el perfil
-  también se crea en `getCurrentProfile` al primer login.
-- **Barras del gráfico "Leads by month" no crecían** → el % de altura no tenía contenedor de
-  referencia; se cambió a altura en **px** calculada.
-- **Números de dinero se salían del cuadro en móvil** → unidad a la etiqueta.
-- **Team: recuadros se solapaban con el nombre** → layout apilado (nombre arriba, grid abajo).
-- **"Joana 0 proyectos"**: no era bug — su cliente no tenía proyecto. Team ahora muestra
-  también nº de clientes asignados.
-- **Preview login no persiste sesión** → verificar en Vercel (ver §8).
+`.env.local` (local, gitignored) ya tiene los valores. **Para producción, añadir en Vercel →
+Settings → Environment Variables (Production) y redeploy:**
+- `RESEND_API_KEY` — la key de Resend del usuario (empieza por `re_`).
+- `RESEND_FROM` — hoy `Servian CRM <onboarding@resend.dev>` (modo prueba). Cambiar al dominio real
+  cuando esté verificado.
+- `CRON_SECRET` — secreto que protege el endpoint del cron (lo genera Claude; ya está en `.env.local`).
+- (Opcional) `NEXT_PUBLIC_APP_URL` — por defecto `https://servian-crm.vercel.app` (para los enlaces
+  del email); solo cambiar si cambia el dominio.
+
+Cron: `vercel.json` → `/api/cron/daily-followups` a `0 5 * * *` (UTC) = **9:00 Dubái**. Vercel manda
+`Authorization: Bearer ${CRON_SECRET}`. En plan Hobby los crons son diarios y corren dentro de la hora.
+
+**Nota de seguridad:** la `RESEND_API_KEY` se compartió por chat; conviene regenerarla en Resend tras
+configurarla en Vercel.
 
 ---
 
-## 12. Reglas de interacción con el usuario
+## 12. Qué necesitamos de Sergio (bloquea features de arriba)
 
-- Español, tono cercano, explica en simple. El usuario no programa.
-- Antes de construir algo grande, confirma el enfoque; propón ideas ("director creativo").
-- Al terminar cada bloque: desplegar, dar el SQL si hace falta, y decir "qué probar".
-- No rompas producción: si una escritura necesita columna nueva, hazla resiliente (§7.5) y
-  entrega el SQL para que el usuario lo corra.
-```
+1. **Dominio de email** (p.ej. `serviancontracting.com` o subdominio) + **acceso al DNS** para
+   verificarlo en Resend → habilita enviar desde `crm@serviancontracting.com` a todo el equipo
+   (sin esto, el email 9am solo llega al correo del usuario en modo prueba). [Bloquea §10.2]
+2. **TRN** (Tax Registration Number) de Servian → para que las facturas sean fiscalmente válidas en
+   UAE; se pone en `lib/company.ts`. [Bloquea §10.4]
+3. **Emails de los comerciales que faltan**: **Elsayed** y **Faizan** → para crearles cuenta. [§10.3]
+4. Confirmar el **correo "from"** deseado (p.ej. `crm@` vs `no-reply@serviancontracting.com`).
+5. (Para RRSS, más adelante) Con la **agencia**: cómo integran captación online y si usan alguna
+   herramienta (Meta Lead Ads, Zapier/Make…) para conectar con el CRM.
+
+---
+
+## 13. Problemas conocidos y cómo se resolvieron
+
+- **Tailwind v4 corchetes** `bg-[--x]` no funcionan → todo a `bg-(--x)`.
+- **middleware deprecado en Next 16** → `proxy.ts` / función `proxy`.
+- **Trigger `handle_new_user`** rompía alta de usuarios → reescrito blindado (SET search_path +
+  EXCEPTION) + red de seguridad: el perfil también se crea en `getCurrentProfile` al primer login.
+- **Alfie/Joana veían su correo en vez del nombre** → tenían `profiles.full_name` vacío; se rellenó
+  ("Alfie"/"Joana"). El código usa `full_name || email`.
+- **Borrado de proyecto no se veía** → estaba al fondo del acordeón; se subió arriba + botón papelera
+  en la cabecera.
+- **Preview no persiste sesión** → verificar en Vercel.
+
+---
+
+## 14. Contexto extra para continuar sin el historial
+
+- El proyecto avanza **feature por feature**: confirmar enfoque (con preguntas si hay decisiones del
+  usuario), construir, `tsc`, commit+push, dar SQL si aplica, decir "qué probar". Actualizar
+  `ROADMAP.md` y este HANDOFF al cerrar bloques grandes.
+- El usuario decide prioridades; ahora mismo lo único que "falta de verdad" es **activar el email**
+  (depende de Sergio) y **RRSS** (on hold por la agencia). El resto está funcional para el día a día.
+- No hay password de la DB en el agente: **DDL siempre se entrega como SQL** al usuario.
+- Repaso rápido de archivos que tocarás casi siempre: `lib/data.ts` (tipos), `lib/db.ts` (lecturas),
+  `app/actions.ts` (escrituras), `app/clients/[id]/ClientDetail.tsx` (ficha, la UI más grande).

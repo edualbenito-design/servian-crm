@@ -42,8 +42,9 @@
 - [x] Cuentas reales de **Alfie** (alfie.infante101786@gmail.com) y **Joana**
   (joanamarieconceja@gmail.com) — rol sales, full_name = "Alfie"/"Joana" (ven su nombre, no el correo)
 - [ ] ⏸️ (BLOQUEADO: faltan sus emails) Crear cuentas de Elsayed y Faizan (rol sales, full_name exacto)
-- [ ] 🔽 (ADICIONAL, no prioritario — boca a boca funciona bien) Estructura para leads de RRSS
-  (campos de campaña/UTM) + pool genérico "Unassigned" → asignación (manual ahora, round-robin futuro)
+- [ ] ⏸️ ON HOLD (el usuario debe hablar con su agencia para integrar con sus sistemas) — Captación RRSS:
+  Fase 1 campo "Campaña" + vista/filtro "Unassigned" + botón "Asignar a [comercial]" · Fase 2 página
+  pública de intake (link IG) → pool "Unassigned" · Fase 3 reparto round-robin. Ver HANDOFF §10.6.
 - [x] Adjuntar archivos/fotos por proyecto (renders/comprobantes/docs por proyecto, Supabase Storage)
 - [x] **Estados de pago / facturas**: en cada cotización aceptada se registran pagos
   (importe/método/fecha/nota) con resumen Debido/Pagado/Saldo y estado
@@ -52,7 +53,7 @@
   en `lib/company.ts` (pendiente de que Sergio lo envíe). % pagado/pendiente con barra
   de progreso + etiqueta de hito por pago (Primer/Segundo/Último pago).
   SQL: `sql/2026-07-07-payments-invoices.sql` + `sql/2026-07-07-payment-milestone.sql`
-- [x] Contacto directo WhatsApp/Llamar/Email en la ficha del cliente (opcional futuro: también desde la lista)
+- [x] Contacto directo WhatsApp/Llamar/Email en la ficha del cliente + **WhatsApp directo desde la lista**
 - [ ] ⏸️ (EN PAUSA: espera dominio de Sergio + cuenta Resend) Recordatorios / briefing diario 9am por email
 - [x] Desplegado en Vercel (servian-crm.vercel.app), multi-dispositivo
 
