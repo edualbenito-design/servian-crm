@@ -220,6 +220,7 @@ export interface Client {
   capturedAt?: string; // date the lead was captured (YYYY-MM-DD)
   createdAt?: string; // row creation timestamp (fallback for month grouping)
   nextFollowUp?: string; // date of the next planned follow-up (YYYY-MM-DD)
+  followUpNote?: string; // short reminder for that follow-up (e.g. "call on payday")
   notes?: string;
   projects: Project[];
   activities: Activity[];

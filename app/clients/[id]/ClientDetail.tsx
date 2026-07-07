@@ -18,7 +18,7 @@ import {
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { updateClient, updateFollowUp, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 
@@ -993,6 +993,141 @@ function ProjectCard({
   );
 }
 
+// ─── follow-up card ───────────────────────────────────────────────────────────
+// Prominent, always-visible follow-up editor: pick a date + write a short note
+// ("call on payday"). Saving feeds the Follow-up Calendar and the 9am email.
+
+function FollowUpCard({
+  nextFollowUp,
+  followUpNote,
+  onSave,
+}: {
+  nextFollowUp?: string;
+  followUpNote?: string;
+  onSave: (date: string, note: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(nextFollowUp ?? "");
+  const [note, setNote] = useState(followUpNote ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const state = followUpState(nextFollowUp);
+  const badgeTone =
+    state === "overdue"
+      ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+      : state === "today"
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+        : "bg-(--surface) border border-(--border) text-(--text-secondary)";
+
+  function openEdit() {
+    setDate(nextFollowUp ?? "");
+    setNote(followUpNote ?? "");
+    setEditing(true);
+  }
+
+  async function save(newDate: string, newNote: string) {
+    setSaving(true);
+    try {
+      await onSave(newDate, newNote);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
+          Next Follow-up
+        </h2>
+        {!editing && (
+          <button
+            type="button"
+            onClick={openEdit}
+            className="text-xs font-semibold text-(--accent) hover:underline"
+          >
+            {nextFollowUp ? "Edit" : "Set"}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        nextFollowUp ? (
+          <div className="space-y-2">
+            <span
+              className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${badgeTone}`}
+            >
+              {formatDate(nextFollowUp)}
+              {state === "overdue" && " · overdue"}
+              {state === "today" && " · today"}
+            </span>
+            {followUpNote && (
+              <p className="text-sm text-(--text-secondary) whitespace-pre-wrap">
+                {followUpNote}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-(--text-muted)">
+            No follow-up set. Pick a date to see it on the calendar.
+          </p>
+        )
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL}>Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className={INPUT}
+            />
+          </div>
+          <div>
+            <label className={LABEL}>Note (optional)</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              placeholder="e.g. Message on the 28th — that's their payday"
+              className={INPUT}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={saving || !date}
+              onClick={() => save(date, note)}
+              className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-2 disabled:opacity-50 transition-opacity"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setEditing(false)}
+              className="px-3 py-2 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          {nextFollowUp && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => save("", "")}
+              className="w-full text-xs font-medium text-red-500 hover:underline"
+            >
+              Clear follow-up
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export function ClientDetail({
@@ -1133,6 +1268,22 @@ export function ClientDetail({
     setClientModalOpen(false);
     pushClientActivity("client_updated", "Client details updated");
     await updateClient(client.id, cf);
+  }
+
+  // Quick follow-up save (date + note) straight from the sidebar card.
+  async function saveFollowUp(date: string, note: string) {
+    setClient((prev) => ({
+      ...prev,
+      nextFollowUp: date || undefined,
+      followUpNote: note.trim() || undefined,
+    }));
+    pushClientActivity(
+      "client_updated",
+      date
+        ? `📅 Follow-up set for ${date}${note.trim() ? ` — ${note.trim()}` : ""}`
+        : "📅 Follow-up cleared"
+    );
+    await updateFollowUp(client.id, date, note);
   }
 
   // ── project modal ───────────────────────────────────────────────────────────
@@ -1416,6 +1567,13 @@ export function ClientDetail({
             )}
           </div>
 
+          {/* Follow-up */}
+          <FollowUpCard
+            nextFollowUp={client.nextFollowUp}
+            followUpNote={client.followUpNote}
+            onSave={saveFollowUp}
+          />
+
           {/* Details */}
           <div className="bg-(--card) border border-(--border) rounded-xl p-5 space-y-4">
             <h2 className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
@@ -1474,28 +1632,6 @@ export function ClientDetail({
                 <span className="text-xs font-medium text-(--text-secondary)">
                   {client.capturedAt ? formatDate(client.capturedAt) : "—"}
                 </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-(--text-muted) shrink-0">
-                  Next Follow-up
-                </span>
-                {client.nextFollowUp ? (
-                  <span
-                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                      followUpState(client.nextFollowUp) === "overdue"
-                        ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                        : followUpState(client.nextFollowUp) === "today"
-                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
-                          : "bg-(--surface) border border-(--border) text-(--text-secondary)"
-                    }`}
-                  >
-                    {formatDate(client.nextFollowUp)}
-                    {followUpState(client.nextFollowUp) === "overdue" && " · overdue"}
-                    {followUpState(client.nextFollowUp) === "today" && " · today"}
-                  </span>
-                ) : (
-                  <span className="text-xs font-medium text-(--text-muted)">—</span>
-                )}
               </div>
             </div>
           </div>

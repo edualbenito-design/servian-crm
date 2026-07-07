@@ -109,6 +109,41 @@ export async function updateClient(clientId: string, fields: ClientFields): Prom
   revalidatePath(`/clients/${clientId}`);
 }
 
+// Sets (or clears) the next follow-up date + note straight from the client
+// page, without opening the full edit modal. Resilient: if the follow_up_note
+// column isn't there yet, it still saves the date.
+export async function updateFollowUp(
+  clientId: string,
+  date: string,
+  note: string
+): Promise<void> {
+  const db = serverClient();
+  const nextDate = date || null;
+  const trimmedNote = note.trim() || null;
+
+  let { error } = await db
+    .from("clients")
+    .update({ next_follow_up: nextDate, follow_up_note: trimmedNote })
+    .eq("id", clientId);
+  if (error) {
+    // follow_up_note column may not exist yet — save at least the date.
+    ({ error } = await db
+      .from("clients")
+      .update({ next_follow_up: nextDate })
+      .eq("id", clientId));
+  }
+  if (error) throw new Error(error.message);
+
+  const label = nextDate
+    ? `📅 Follow-up set for ${nextDate}${trimmedNote ? ` — ${trimmedNote}` : ""}`
+    : "📅 Follow-up cleared";
+  await logActivity(clientId, "client_updated", label);
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
+  revalidatePath(`/clients/${clientId}`);
+}
+
 // Creates a new client (manual lead entry) and returns its id.
 export async function createClient(fields: ClientFields): Promise<string> {
   const db = serverClient();

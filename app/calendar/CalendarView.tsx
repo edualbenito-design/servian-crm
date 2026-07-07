@@ -10,6 +10,7 @@ type Item = {
   phone: string;
   assignedTo: string;
   nextFollowUp: string; // YYYY-MM-DD
+  note?: string;
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -237,6 +238,11 @@ export function CalendarView({
                       {c.location || c.phone}
                       {isManager ? ` · ${c.assignedTo}` : ""}
                     </p>
+                    {c.note && (
+                      <p className="text-xs text-(--text-secondary) mt-0.5 line-clamp-2">
+                        {c.note}
+                      </p>
+                    )}
                   </Link>
                   {c.phone && (
                     <a

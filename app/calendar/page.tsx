@@ -18,6 +18,7 @@ export default async function CalendarPage() {
       phone: c.phone,
       assignedTo: c.assignedTo,
       nextFollowUp: c.nextFollowUp!,
+      note: c.followUpNote ?? "",
     }));
 
   return <CalendarView items={items} isManager={profile?.isManager ?? false} />;

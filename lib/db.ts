@@ -124,6 +124,7 @@ type DbClient = {
   captured_by: string | null;
   captured_at: string | null;
   next_follow_up: string | null;
+  follow_up_note?: string | null;
   notes: string | null;
   created_at: string;
   deleted_at?: string | null;
@@ -198,6 +199,7 @@ function toClient(c: DbClient): Client {
     capturedAt: c.captured_at ?? undefined,
     createdAt: c.created_at ?? undefined,
     nextFollowUp: c.next_follow_up ?? undefined,
+    followUpNote: c.follow_up_note ?? undefined,
     notes: c.notes ?? undefined,
     // Hide archived (soft-deleted) projects everywhere.
     projects: c.projects
