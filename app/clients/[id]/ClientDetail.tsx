@@ -20,7 +20,7 @@ import {
   type Salesperson,
 } from "@/lib/data";
 import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
-import { AttachmentControl } from "./AttachmentControl";
+import { AttachmentControl } from "./AttachmentControl"; // optional file per payment/follow-up
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 

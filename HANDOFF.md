@@ -232,6 +232,10 @@ usuario:**
   (nueva fecha + porqué) o **marcar hecho** (con nota de resultado, guarda quién/cuándo). Lista de
   pendientes + **historial** de hechos por proyecto/cliente. En `/calendar`: cada tarea su día, con
   botones **Done** y **Move** inline (con nota). Nota pendiente: **adjuntar captura** (Mejora 2).
+- **Adjuntos opcionales:** un archivo por **pago** (justificante/captura de la transferencia) y por
+  **follow-up** (captura de la conversación). Botón "Attach" compacto (componente `AttachmentControl`);
+  se guardan en el bucket privado `project-files` (columnas `receipt_path/name` en payments y
+  `attachment_path/name` en follow_ups). Lecturas resilientes; requiere `sql/2026-07-07-attachments.sql`.
 - **Cobros** (`/collections`): dinero pendiente en cotizaciones **aceptadas** (balance > 0). KPIs
   (pendiente total, vencido >30d, cobrado este mes), tramos por antigüedad (ageing), pendiente por
   comercial (managers) y lista de deudas (mayor/más antigua primero) con WhatsApp + enlaces a ficha

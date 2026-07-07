@@ -60,6 +60,10 @@
 - [ ] ⏳ **Adjuntos opcionales** (Mejora 2b): captura en follow-ups + justificante en pagos (1 sistema).
 - [ ] ⏳ **Aviso de anticipo 50% antes del inicio de obra** (Mejora 3, sin SQL).
 - [ ] ⏳ **Hitos de obra con % de avance** (Mejora 4, jsonb en projects, plantilla editable).
+- [x] **Follow-ups como tareas** (sobre el proyecto): crear/completar/aplazar con nota en cada
+  paso, historial de hechos, acciones desde el calendario. SQL: `sql/2026-07-07-follow-ups-table.sql`
+- [x] **Adjuntos opcionales**: justificante por pago + captura de conversación por follow-up
+  (bucket privado project-files). SQL: `sql/2026-07-07-attachments.sql`
 - [x] **Panel de Cobros** (`/collections`): dinero pendiente en cotizaciones aceptadas
   (pendiente total, vencido >30d, cobrado este mes, tramos por antigüedad, pendiente por comercial,
   lista de deudas mayor/más antigua primero con WhatsApp y enlaces). Sin SQL nuevo. Managers todo,
