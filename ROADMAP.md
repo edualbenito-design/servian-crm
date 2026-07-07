@@ -54,6 +54,12 @@
   de progreso + etiqueta de hito por pago (Primer/Segundo/Último pago).
   SQL: `sql/2026-07-07-payments-invoices.sql` + `sql/2026-07-07-payment-milestone.sql`
 - [x] Contacto directo WhatsApp/Llamar/Email en la ficha del cliente + **WhatsApp directo desde la lista**
+- [x] **Follow-ups como tareas** (tabla `follow_ups`): sobre el proyecto (o generales por cliente),
+  con ciclo de vida crear→pendiente/atrasado→aplazar/hecho, nota en cada paso, historial de hechos,
+  y acciones Done/Move desde el calendario. SQL: `follow-ups-table.sql` + `follow-up-note.sql`.
+- [ ] ⏳ **Adjuntos opcionales** (Mejora 2b): captura en follow-ups + justificante en pagos (1 sistema).
+- [ ] ⏳ **Aviso de anticipo 50% antes del inicio de obra** (Mejora 3, sin SQL).
+- [ ] ⏳ **Hitos de obra con % de avance** (Mejora 4, jsonb en projects, plantilla editable).
 - [x] **Panel de Cobros** (`/collections`): dinero pendiente en cotizaciones aceptadas
   (pendiente total, vencido >30d, cobrado este mes, tramos por antigüedad, pendiente por comercial,
   lista de deudas mayor/más antigua primero con WhatsApp y enlaces). Sin SQL nuevo. Managers todo,

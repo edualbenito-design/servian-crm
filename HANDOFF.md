@@ -132,6 +132,11 @@ sql/             Migraciones (una por feature; ejecutar en Supabase → SQL Edit
   **deleted_at/deleted_by** + **deletion_requested_by/at/reason**
 - **activities**: id, client_id, project_id (null = historial de cliente; con valor = de proyecto),
   type (note/client_updated/project_created/project_updated/stage_changed), description, created_at
+- **follow_ups**: id, client_id, project_id (null = general/lead), due_date, note, status
+  (pending/done), done_note/done_at/done_by, created_by, created_at. **Fuente de verdad de los
+  follow-ups** (tareas con ciclo de vida). `clients.next_follow_up`/`follow_up_note` quedan como
+  LEGACY: `getClients` deriva `nextFollowUp`/`followUpNote` = follow-up pendiente más próximo (para
+  lista/dashboard/email); si la tabla no existe aún, cae a la columna legacy.
 - **quotes**: id, project_id, client_id, number (Q-YYYY-NNNN), status (draft/sent/accepted/rejected),
   issue_date, valid_until, vat_rate (def 5), notes, items (jsonb {description,qty,unitPrice}[]),
   sent_at, created_at, **invoice_number/invoiced_at** (factura emitida)
@@ -153,9 +158,13 @@ Storage buckets privados: **company-docs**, **project-files** (descargas por sig
 - **CAPTURERS** = los 4 comerciales + Eduardo + Sergio.
 
 **Migraciones aplicadas** (todas corridas en Supabase salvo aviso): base + aprobación de proyectos
-+ trigger de perfiles + `deletion-archive` + `payments-invoices`. **Pendiente/opcional:**
-`sql/2026-07-07-payment-milestone.sql` (columna `payments.milestone`; los pagos funcionan sin ella,
-solo no guarda la etiqueta — la escritura es resiliente).
++ trigger de perfiles + `deletion-archive` + `payments-invoices`. **Pendientes de correr por el
+usuario:**
+- `sql/2026-07-07-payment-milestone.sql` (opcional; columna `payments.milestone`, escritura resiliente).
+- `sql/2026-07-07-follow-up-note.sql` (columna `clients.follow_up_note`; ahora legacy pero el backfill
+  de follow-ups la lee — correr ANTES del siguiente).
+- `sql/2026-07-07-follow-ups-table.sql` (**crea la tabla `follow_ups` + backfill**; necesaria para que
+  los follow-ups como tareas persistan. Sin ella, la UI de follow-ups no guarda nada).
 
 ---
 
@@ -218,6 +227,11 @@ solo no guarda la etiqueta — la escritura es resiliente).
   **% pagado/pendiente** con barra, estado (Unpaid/Partial/Paid), registro de pagos
   (importe/método/fecha/**hito**/nota) y **TAX INVOICE imprimible** (INV-AÑO-NNNN, ?doc=invoice).
 - **Archivos por proyecto** (renders/comprobantes/docs) → Supabase Storage.
+- **Follow-ups como TAREAS** (tabla `follow_ups`): sobre el proyecto (o generales a nivel cliente
+  para leads). Ciclo de vida: crear (fecha+nota) → pendiente/atrasado (sigue avisando) → **aplazar**
+  (nueva fecha + porqué) o **marcar hecho** (con nota de resultado, guarda quién/cuándo). Lista de
+  pendientes + **historial** de hechos por proyecto/cliente. En `/calendar`: cada tarea su día, con
+  botones **Done** y **Move** inline (con nota). Nota pendiente: **adjuntar captura** (Mejora 2).
 - **Cobros** (`/collections`): dinero pendiente en cotizaciones **aceptadas** (balance > 0). KPIs
   (pendiente total, vencido >30d, cobrado este mes), tramos por antigüedad (ageing), pendiente por
   comercial (managers) y lista de deudas (mayor/más antigua primero) con WhatsApp + enlaces a ficha
@@ -235,6 +249,18 @@ solo no guarda la etiqueta — la escritura es resiliente).
 
 ## 10. Tareas pendientes (priorizadas)
 
+0. **Bloque "obra + pagos" en curso** (pedido por Eduardo, 4 mejoras, se construyen una a una):
+   1. ✅ Follow-up con nota (hecho, luego evolucionado a tareas).
+   2a. ✅ **Follow-ups como tareas** por proyecto (hecho). SQL `follow-ups-table.sql` + `follow-up-note.sql`.
+   2b. ⏳ **Adjuntos opcionales** (sistema único reutilizable): captura de conversación en follow-ups
+       (crear/aplazar/completar, opcional) + **justificante en cada pago**. Reutilizar `project-files`
+       o columna en la fila. Notas ya van en cada paso del follow-up.
+   3. ⏳ **Aviso de anticipo (50%) antes del inicio de obra**: si `project.start_date` se acerca y no se
+      ha recibido el 50% de la(s) quote(s) aceptada(s), banner en ficha/proyecto + aviso en calendario.
+      Se calcula solo (sin SQL). Anticipo por defecto 50% (confirmar si configurable).
+   4. ⏳ **Hitos de obra con % de avance** (editable por proyecto + plantilla por defecto, ej. cocina:
+      Desmantelar 20 → Alicatado+electricidad 60 → Muebles 70 → Electrodomésticos 90 → Limpieza 100).
+      Guardar en jsonb en `projects` (resiliente). Objetivo: que cualquiera entienda el estado de la obra.
 1. **Activar el email 9am en producción** (código ya hecho): el usuario debe **añadir en Vercel**
    (Production) `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET` y redeploy. Probar con
    `/api/cron/daily-followups?key=<CRON_SECRET>`. ⚠️ Sin dominio verificado, Resend en modo prueba
