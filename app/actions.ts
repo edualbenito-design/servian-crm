@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -354,6 +354,7 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
     contractor: data.contractor ?? undefined,
     teamMembers: data.team_members ?? [],
     suppliers: data.suppliers ?? [],
+    milestones: data.milestones ?? [],
     approved: false,
     quotes: [],
     followUps: [],
@@ -477,6 +478,29 @@ export async function setProjectApproval(
     approvedBy: approvedBy ?? undefined,
     approvedAt: approvedAt ?? undefined,
   };
+}
+
+// Persist a project's site-progress milestones (jsonb). Pass an optional note to
+// log in the project history (e.g. when a stage is completed).
+export async function setProjectMilestones(
+  clientId: string,
+  projectId: string,
+  milestones: Milestone[],
+  logNote?: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { error } = await db
+    .from("projects")
+    .update({ milestones })
+    .eq("id", projectId);
+  if (error) {
+    throw new Error(
+      "Could not save milestones. Run the site-progress SQL migration first."
+    );
+  }
+  if (logNote) await logActivity(clientId, "project_updated", logNote, projectId);
+  revalidatePath(`/clients/${clientId}`);
 }
 
 // ─── Deletion (archive) with manager sign-off ───────────────────────────────────

@@ -13,14 +13,16 @@ import {
   type Activity,
   type ActivityType,
   type FollowUp,
+  type Milestone,
   type PropertyType,
   type LeadSource,
   type ProjectStatus,
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, setProjectMilestones, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
 import { AttachmentControl } from "./AttachmentControl"; // optional file per payment/follow-up
+import { SiteProgress } from "./SiteProgress"; // construction milestones
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
 
@@ -734,6 +736,7 @@ function ProjectCard({
   onDeleteFollowUp,
   onAttachFollowUp,
   onRemoveFollowUpAttachment,
+  onMilestonesChange,
 }: {
   project: Project;
   clientId: string;
@@ -750,6 +753,7 @@ function ProjectCard({
   onDeleteFollowUp: (id: string) => Promise<void>;
   onAttachFollowUp: (id: string, file: File) => Promise<void>;
   onRemoveFollowUpAttachment: (id: string, path: string) => Promise<void>;
+  onMilestonesChange: (milestones: Milestone[], logNote?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -995,6 +999,12 @@ function ProjectCard({
             clientId={clientId}
             projectId={project.id}
             initialQuotes={project.quotes}
+          />
+
+          {/* Site progress (construction milestones) */}
+          <SiteProgress
+            milestones={project.milestones}
+            onChange={onMilestonesChange}
           />
 
           {/* Files */}
@@ -1625,6 +1635,23 @@ export function ClientDetail({
     await removeFollowUpFile(client.id, id, path);
   }
 
+  // ── site progress (milestones) ──────────────────────────────────────────────
+
+  async function setMilestonesHandler(
+    projectId: string,
+    milestones: Milestone[],
+    logNote?: string
+  ) {
+    setClient((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) =>
+        p.id === projectId ? { ...p, milestones } : p
+      ),
+    }));
+    if (logNote) pushProjectActivity(projectId, "project_updated", logNote);
+    await setProjectMilestones(client.id, projectId, milestones, logNote);
+  }
+
   // ── project modal ───────────────────────────────────────────────────────────
 
   function openAddProject() {
@@ -1654,6 +1681,7 @@ export function ClientDetail({
         contractor: pf.contractor.trim() || undefined,
         teamMembers: parseLines(pf.teamMembers),
         suppliers: parseSuppliers(pf.suppliers),
+        milestones: [],
         approved: false,
         quotes: [],
         followUps: [],
@@ -2121,6 +2149,9 @@ export function ClientDetail({
                     }
                     onRemoveFollowUpAttachment={(id, path) =>
                       removeFollowUpFileHandler(project.id, id, path)
+                    }
+                    onMilestonesChange={(milestones, logNote) =>
+                      setMilestonesHandler(project.id, milestones, logNote)
                     }
                   />
                 ))}

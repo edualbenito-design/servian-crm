@@ -49,6 +49,33 @@ export interface Supplier {
   material: string;
 }
 
+// ── Site progress (construction milestones) ────────────────────────────────────
+// Ordered checkpoints of the actual building work. Each carries a cumulative %
+// reached when that stage is done (e.g. tiling done = 60% of the job). Progress
+// = the highest % among completed milestones. Editable per project (a bathroom,
+// a kitchen and a paint job have different stages).
+export interface Milestone {
+  id: string;
+  label: string;
+  pct: number; // cumulative % of the whole job reached at this stage
+  done: boolean;
+  doneAt?: string;
+}
+
+// Seed template offered on empty projects (a typical kitchen). Fully editable.
+export const DEFAULT_MILESTONES: { label: string; pct: number }[] = [
+  { label: "Demolition / strip-out", pct: 20 },
+  { label: "Tiling & electrical", pct: 60 },
+  { label: "Furniture installed", pct: 70 },
+  { label: "Appliances installed", pct: 90 },
+  { label: "Clean & handover", pct: 100 },
+];
+
+// Overall work progress = highest % among the completed milestones.
+export function obraProgress(milestones: Milestone[]): number {
+  return milestones.reduce((max, m) => (m.done && m.pct > max ? m.pct : max), 0);
+}
+
 // ── Follow-ups ────────────────────────────────────────────────────────────────
 // A follow-up is a task ("message the client on the 28th to collect the 1st
 // payment"). It belongs to a client and, usually, to a specific project. It
@@ -229,6 +256,7 @@ export interface Project {
   contractor?: string; // external company handling the work
   teamMembers: string[]; // worker names
   suppliers: Supplier[]; // material suppliers
+  milestones: Milestone[]; // site progress checkpoints
   // Manager sign-off
   approved: boolean;
   approvedBy?: string;

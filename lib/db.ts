@@ -1,6 +1,6 @@
 import { serverClient } from "./supabase/server";
 import { quoteTotals, nextPendingFollowUp } from "./data";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
   id: string;
@@ -140,6 +140,7 @@ type DbProject = {
   contractor: string | null;
   team_members: string[] | null;
   suppliers: { name: string; material: string }[] | null;
+  milestones: Milestone[] | null;
   approved: boolean | null;
   approved_by: string | null;
   approved_at: string | null;
@@ -192,6 +193,7 @@ function toProject(
     contractor: p.contractor ?? undefined,
     teamMembers: p.team_members ?? [],
     suppliers: p.suppliers ?? [],
+    milestones: p.milestones ?? [],
     approved: p.approved ?? false,
     approvedBy: p.approved_by ?? undefined,
     approvedAt: p.approved_at ?? undefined,
