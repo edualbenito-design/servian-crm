@@ -530,6 +530,7 @@ export interface Receivable {
 export interface Collections {
   receivables: Receivable[];
   collectedThisMonth: number; // sum of payments recorded in the current month
+  collectedByMonth: { month: string; amount: number }[]; // last 6 months, old→new
 }
 
 type DbQuoteLite = {
@@ -563,7 +564,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     .select("id, name, phone, assigned_to, deleted_at, projects(id, name, deleted_at)");
   if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
   const { data: clientsRaw, error: cErr } = await cq;
-  if (cErr || !clientsRaw) return { receivables: [], collectedThisMonth: 0 };
+  if (cErr || !clientsRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [] };
 
   const clientById = new Map<string, DbClientLite>();
   const projectName = new Map<string, string>();
@@ -582,7 +583,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     .from("quotes")
     .select("id, number, project_id, client_id, items, vat_rate, issue_date, invoice_number, invoiced_at")
     .eq("status", "accepted");
-  if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0 };
+  if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [] };
 
   // Payments (fail soft if the table isn't there yet).
   const { data: paysRaw } = await db
@@ -590,6 +591,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     .select("quote_id, amount, paid_on");
   const paidByQuote = new Map<string, number>();
   const lastPayByQuote = new Map<string, string>();
+  const collectedByMonthMap = new Map<string, number>();
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   let collectedThisMonth = 0;
@@ -599,8 +601,17 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     if (p.paid_on) {
       const prev = lastPayByQuote.get(p.quote_id);
       if (!prev || p.paid_on > prev) lastPayByQuote.set(p.quote_id, p.paid_on);
-      if (p.paid_on.slice(0, 7) === thisMonth) collectedThisMonth += amt;
+      const m = p.paid_on.slice(0, 7);
+      collectedByMonthMap.set(m, (collectedByMonthMap.get(m) ?? 0) + amt);
+      if (m === thisMonth) collectedThisMonth += amt;
     }
+  }
+  // Last 6 months (oldest → newest) of collections.
+  const collectedByMonth: { month: string; amount: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    collectedByMonth.push({ month: key, amount: collectedByMonthMap.get(key) ?? 0 });
   }
 
   const today = new Date();
@@ -643,7 +654,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
 
   // Biggest balances first (that's where the money is).
   receivables.sort((a, b) => b.balance - a.balance);
-  return { receivables, collectedThisMonth };
+  return { receivables, collectedThisMonth, collectedByMonth };
 }
 
 export async function getQuote(id: string): Promise<Quote | null> {
