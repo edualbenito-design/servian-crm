@@ -1,7 +1,7 @@
 # HANDOFF — Servian Contracting CRM
 
 > Documento de traspaso para una nueva sesión de Claude Code.
-> Última actualización: 2026-07-07. Léelo entero antes de tocar nada.
+> Última actualización: 2026-07-08. Léelo entero antes de tocar nada.
 > Objetivo: que una sesión nueva continúe SIN leer el historial completo.
 
 ---
@@ -53,8 +53,9 @@ en producción — el `.env.local` NO se despliega. Pendiente de que el usuario 
 ## 4. Arquitectura y flujo de datos
 
 - **Server Components** hacen fetch vía `lib/db.ts` (`getClients`, `getClient`, `getQuote`,
-  `getDocuments`). Usan `serverClient()` (lib/supabase/server.ts) con la **SECRET key**
-  (service_role, salta RLS).
+  `getDocuments`, `getCollections`, `getFollowUpAgenda`, `getAdvanceAlerts`). Usan `serverClient()`
+  (lib/supabase/server.ts) con la **SECRET key** (service_role, salta RLS). `getClients` adjunta
+  follow-ups pendientes; `getClient` adjunta pagos + follow-ups (con historial) + signed URLs.
 - **Escrituras:** Server Actions en `app/actions.ts`. Toda escritura revalida rutas afectadas.
 - **Auth / rol:** `lib/auth.ts` → `getCurrentProfile()`. Lee sesión con el cliente SSR (cookies,
   publishable key) y el perfil (rol + nombre) de la tabla `profiles` con la service key. Si no
@@ -81,10 +82,13 @@ en producción — el `.env.local` NO se despliega. Pendiente de que el usuario 
 ```
 lib/
   data.ts        Tipos + constantes (SALESPEOPLE, CAPTURERS, PIPELINE_STAGES, PAYMENT_METHODS,
-                 PAYMENT_MILESTONES) + helpers (followUpState, quoteTotals, paymentSummary).
-                 FUENTE DE VERDAD de los tipos (Client, Project, Quote, Payment…).
-  db.ts          Lecturas + mapeos DB→tipos. Filtra archivados (deleted_at) de listas y proyectos.
-                 attachProjectFiles + attachPayments cargan datos anidados con signed URLs / pagos.
+                 PAYMENT_MILESTONES, DEFAULT_MILESTONES, ADVANCE_PCT/ADVANCE_LEAD_DAYS) + helpers
+                 (followUpState, quoteTotals, paymentSummary, nextPendingFollowUp, obraProgress,
+                 advanceAlert). FUENTE DE VERDAD de los tipos (Client, Project, Quote, Payment,
+                 FollowUp, Milestone…).
+  db.ts          Lecturas + mapeos DB→tipos. Filtra archivados (deleted_at). attachProjectFiles +
+                 attachPayments + attachFollowUps cargan anidados con signed URLs. Además:
+                 getCollections, getFollowUpAgenda, getAdvanceAlerts (consultas en bloque).
   auth.ts        getCurrentProfile() → { id, email, name, role, isManager }
   analytics.ts   KPIs/funnel del dashboard de managers
   team.ts        Helpers de la pestaña Team
@@ -105,15 +109,19 @@ app/
   home/          Landing al pinchar el logo (stats + tarjetas de secciones)
   dashboard/     Managers: analytics global. Sales: <SalesDashboard/> personal
   pipeline/      page.tsx + KanbanBoard.tsx (8 etapas, drag&drop)
-  calendar/      page.tsx + CalendarView.tsx (mes de follow-ups; clic en un lead → su ficha)
-  collections/   page.tsx (Cobros: dinero pendiente en quotes aceptadas; managers todo, sales lo suyo)
+  calendar/      page.tsx + CalendarView.tsx (agenda: día dividido To-do/Done that day; drag&drop a
+                 otro día; banner de avisos de anticipo). Datos: getFollowUpAgenda + getAdvanceAlerts
+  collections/   page.tsx (thin) + CollectionsView.tsx (cliente: KPIs clicables, desglose por mes,
+                 filtros All/Current/Overdue). Dinero pendiente en quotes aceptadas.
   team/          Lista comerciales + [slug]/ (ficha por comercial)
   documents/     Managers: subir/descargar docs de empresa (Storage)
-  clients/[id]/  page.tsx + ClientDetail.tsx (ficha; incluye ProjectCard, DeletionZone,
-                 QuotesSection, PaymentsPanel, FilesSection, historial, contacto rápido)
+  clients/[id]/  page.tsx + ClientDetail.tsx (ficha; ProjectCard, DeletionZone, QuotesSection,
+                 PaymentsPanel, FilesSection, FollowUps, SiteProgress, historial, contacto rápido)
+                 + AttachmentControl.tsx (adjunto opcional reutilizable) + SiteProgress.tsx (hitos obra)
   quotes/[id]/   page.tsx + QuotePrint.tsx (documento imprimible; ?doc=invoice = TAX INVOICE)
   api/cron/daily-followups/route.ts   Endpoint del briefing 9am (Resend)
-  components/    NavLinks.tsx (Dashboard/Clients/Pipeline/Calendar + Team/Docs), ThemeToggle.tsx, Logo.tsx
+  components/    NavLinks.tsx (Dashboard/Clients/Pipeline/Calendar/Collections + Team/Docs),
+                 ThemeToggle.tsx, Logo.tsx
 public/          logo.png, logo-dark.png (el PDF usa /logo.png)
 sql/             Migraciones (una por feature; ejecutar en Supabase → SQL Editor)
 ```
@@ -128,20 +136,23 @@ sql/             Migraciones (una por feature; ejecutar en Supabase → SQL Edit
   **deletion_requested_by/at/reason** (solicitud de borrado)
 - **projects**: id, client_id, name, description, budget, status (active/completed/on-hold),
   pipeline_stage (1..8), start_date, end_date, contractor, team_members (jsonb string[]),
-  suppliers (jsonb {name,material}[]), approved/approved_by/approved_at, created_at,
+  suppliers (jsonb {name,material}[]), **milestones (jsonb {id,label,pct,done,doneAt}[])** (hitos de
+  obra), approved/approved_by/approved_at, created_at,
   **deleted_at/deleted_by** + **deletion_requested_by/at/reason**
 - **activities**: id, client_id, project_id (null = historial de cliente; con valor = de proyecto),
   type (note/client_updated/project_created/project_updated/stage_changed), description, created_at
 - **follow_ups**: id, client_id, project_id (null = general/lead), due_date, note, status
-  (pending/done), done_note/done_at/done_by, created_by, created_at. **Fuente de verdad de los
-  follow-ups** (tareas con ciclo de vida). `clients.next_follow_up`/`follow_up_note` quedan como
-  LEGACY: `getClients` deriva `nextFollowUp`/`followUpNote` = follow-up pendiente más próximo (para
-  lista/dashboard/email); si la tabla no existe aún, cae a la columna legacy.
+  (pending/done), done_note/done_at/done_by, created_by, created_at, **attachment_path/attachment_name**
+  (captura opcional). **Fuente de verdad de los follow-ups** (tareas con ciclo de vida).
+  `clients.next_follow_up`/`follow_up_note` quedan como LEGACY: `getClients` deriva
+  `nextFollowUp`/`followUpNote` = follow-up pendiente más próximo (lista/dashboard/email); si la tabla
+  no existe aún, cae a la columna legacy.
 - **quotes**: id, project_id, client_id, number (Q-YYYY-NNNN), status (draft/sent/accepted/rejected),
   issue_date, valid_until, vat_rate (def 5), notes, items (jsonb {description,qty,unitPrice}[]),
   sent_at, created_at, **invoice_number/invoiced_at** (factura emitida)
 - **payments**: id, quote_id, project_id, client_id, amount, method (cash/bank/cheque/card/other),
-  paid_on, **milestone** (First/Second/Final payment…), note, created_by, created_at
+  paid_on, **milestone** (First/Second/Final payment…), note, created_by, created_at,
+  **receipt_path/receipt_name** (justificante opcional)
 - **project_files**: id, project_id, client_id, name, path, mime, size, category
   (render/receipt/document/other), uploaded_by, created_at
 - **documents** (empresa): id, name, path, mime, size, uploaded_by, created_at
@@ -157,14 +168,12 @@ Storage buckets privados: **company-docs**, **project-files** (descargas por sig
   **Elsayed**, **Faizan** → SIN cuenta aún (faltan sus emails).
 - **CAPTURERS** = los 4 comerciales + Eduardo + Sergio.
 
-**Migraciones aplicadas** (todas corridas en Supabase salvo aviso): base + aprobación de proyectos
-+ trigger de perfiles + `deletion-archive` + `payments-invoices`. **Pendientes de correr por el
-usuario:**
-- `sql/2026-07-07-payment-milestone.sql` (opcional; columna `payments.milestone`, escritura resiliente).
-- `sql/2026-07-07-follow-up-note.sql` (columna `clients.follow_up_note`; ahora legacy pero el backfill
-  de follow-ups la lee — correr ANTES del siguiente).
-- `sql/2026-07-07-follow-ups-table.sql` (**crea la tabla `follow_ups` + backfill**; necesaria para que
-  los follow-ups como tareas persistan. Sin ella, la UI de follow-ups no guarda nada).
+**Migraciones — TODAS aplicadas** (el usuario confirmó 2026-07-08 que corrió todos los SQL de `sql/`):
+base + aprobación de proyectos + trigger de perfiles + `deletion-archive` + `payments-invoices` +
+`payment-milestone` + `follow-up-note` + **`follow-ups-table`** (tabla follow_ups + backfill) +
+**`attachments`** (receipt_* en payments, attachment_* en follow_ups) + **`site-progress`**
+(`projects.milestones` jsonb). No hay SQL pendiente. Las features de calendario-agenda, avisos de
+anticipo, drag&drop, editar y collections-por-mes NO necesitan SQL (calculadas/columnas ya existentes).
 
 ---
 
@@ -233,9 +242,9 @@ usuario:**
 - **Archivos por proyecto** (renders/comprobantes/docs) → Supabase Storage.
 - **Follow-ups como TAREAS** (tabla `follow_ups`): sobre el proyecto (o generales a nivel cliente
   para leads). Ciclo de vida: crear (fecha+nota) → pendiente/atrasado (sigue avisando) → **aplazar**
-  (nueva fecha + porqué) o **marcar hecho** (con nota de resultado, guarda quién/cuándo). Lista de
-  pendientes + **historial** de hechos por proyecto/cliente. En `/calendar`: cada tarea su día, con
-  botones **Done** y **Move** inline (con nota). Nota pendiente: **adjuntar captura** (Mejora 2).
+  (nueva fecha + porqué), **editar** (fecha/nota/nota-resultado in situ) o **marcar hecho** (con nota
+  de resultado, guarda quién/cuándo). Lista de pendientes + **historial** de hechos por proyecto/
+  cliente, ambos con **captura opcional** adjunta. Acciones: add/complete/reschedule/edit/deleteFollowUp.
 - **Aviso de advance payment:** si un proyecto arranca (≤7 días o ya empezó) y sus cotizaciones
   aceptadas tienen <50% pagado, salta un banner rojo + chip en la ficha del proyecto y un aviso arriba
   del **calendario** (con WhatsApp + enlace). Calculado (sin SQL): `advanceAlert()` en lib/data.ts y
@@ -244,22 +253,26 @@ usuario:**
   una con su **% acumulado** del total. Marcar etapas avanza una barra de progreso (%=etapa hecha más
   alta). Plantilla por defecto (cocina) ofrecida en proyectos vacíos. jsonb `projects.milestones`
   (resiliente, default []). Requiere `sql/2026-07-07-site-progress.sql`. Acción `setProjectMilestones`.
-- **Calendario tipo agenda:** el panel del día se divide en **"To do"** (pendiente, con Done/Move) y
-  **"Done that day"** (registro de lo hecho ese día, con quién y nota). Las tareas hechas aparecen en
-  el día en que se completaron → puedes abrir una fecha pasada y ver la actividad de un comercial.
-  Datos vía `getFollowUpAgenda` (pendientes + hechos). Punto verde en días con actividad completada.
+- **Calendario tipo agenda** (`/calendar`): el panel del día se divide en **"To do"** (pendiente, con
+  Done/Move) y **"Done that day"** (registro de lo hecho ese día, con quién y nota). Las tareas hechas
+  aparecen en el día en que se completaron → abrir una fecha pasada muestra la actividad de un comercial.
+  **Drag & drop**: arrastrar un pendiente a otro día lo reprograma (con nota rápida). Punto verde en
+  días con actividad completada. Datos vía `getFollowUpAgenda` + `getAdvanceAlerts`.
 - **Adjuntos opcionales:** un archivo por **pago** (justificante/captura de la transferencia) y por
   **follow-up** (captura de la conversación). Botón "Attach" compacto (componente `AttachmentControl`);
   se guardan en el bucket privado `project-files` (columnas `receipt_path/name` en payments y
   `attachment_path/name` en follow_ups). Lecturas resilientes; requiere `sql/2026-07-07-attachments.sql`.
-- **Cobros** (`/collections`): dinero pendiente en cotizaciones **aceptadas** (balance > 0). KPIs
-  (pendiente total, vencido >30d, cobrado este mes), tramos por antigüedad (ageing), pendiente por
-  comercial (managers) y lista de deudas (mayor/más antigua primero) con WhatsApp + enlaces a ficha
-  y factura. Managers ven todo; comerciales solo lo suyo. Sin SQL nuevo (usa quotes+payments).
+- **Cobros** (`/collections`, `CollectionsView`): dinero pendiente en cotizaciones **aceptadas**
+  (balance > 0). KPIs **clicables** (Outstanding/Overdue filtran la lista) + cobrado este mes;
+  **desglose por mes** (cobrado vs. pendiente, pinchar filtra); chips **All/Current/Overdue**;
+  pendiente por comercial (managers); lista de deudas (mayor primero) con WhatsApp + enlaces a ficha
+  y factura. Managers ven todo; comerciales solo lo suyo. Sin SQL (usa quotes+payments;
+  `getCollections` devuelve receivables + collectedThisMonth + collectedByMonth).
+- **Editar en todo:** pagos (botón lápiz → reabre form, mantiene justificante; `updatePayment`) y
+  follow-ups (Edit in situ, pendientes y hechos; `editFollowUp`). Ver convención §7.10.
 - **Pipeline Kanban** 8 etapas con drag & drop.
 - **Login con roles**, protección de rutas.
 - **Dashboard:** managers = analítica global; comerciales = dashboard personal (SalesDashboard).
-- **Calendario de follow-ups** (`/calendar`): cada lead en el día que toca seguirlo; clic → su ficha.
 - **Email briefing 9am** (Resend + Vercel Cron): a cada comercial su lista de seguimientos del día
   con enlaces. **Código listo y desplegado; falta activarlo en producción (ver §10/§11).**
 - **Team** (managers), **Documentos de empresa** (managers), **Home**, tema claro/oscuro, logo SVG,
@@ -269,18 +282,12 @@ usuario:**
 
 ## 10. Tareas pendientes (priorizadas)
 
-0. **Bloque "obra + pagos" en curso** (pedido por Eduardo, 4 mejoras, se construyen una a una):
-   1. ✅ Follow-up con nota (hecho, luego evolucionado a tareas).
-   2a. ✅ **Follow-ups como tareas** por proyecto (hecho). SQL `follow-ups-table.sql` + `follow-up-note.sql`.
-   2b. ⏳ **Adjuntos opcionales** (sistema único reutilizable): captura de conversación en follow-ups
-       (crear/aplazar/completar, opcional) + **justificante en cada pago**. Reutilizar `project-files`
-       o columna en la fila. Notas ya van en cada paso del follow-up.
-   3. ⏳ **Aviso de anticipo (50%) antes del inicio de obra**: si `project.start_date` se acerca y no se
-      ha recibido el 50% de la(s) quote(s) aceptada(s), banner en ficha/proyecto + aviso en calendario.
-      Se calcula solo (sin SQL). Anticipo por defecto 50% (confirmar si configurable).
-   4. ⏳ **Hitos de obra con % de avance** (editable por proyecto + plantilla por defecto, ej. cocina:
-      Desmantelar 20 → Alicatado+electricidad 60 → Muebles 70 → Electrodomésticos 90 → Limpieza 100).
-      Guardar en jsonb en `projects` (resiliente). Objetivo: que cualquiera entienda el estado de la obra.
+**✅ Cerrado esta sesión (2026-07-08), todo en producción:** panel de Cobros + por mes; follow-ups
+como tareas; adjuntos opcionales (justificante/captura); hitos de obra con %; calendario tipo agenda
+(To-do/Done that day) con drag&drop; aviso de anticipo; **editar pagos y follow-ups**. Todos los SQL
+corridos. **Nada de esto queda pendiente.**
+
+Pendiente REAL (depende de terceros o son extras):
 1. **Activar el email 9am en producción** (código ya hecho): el usuario debe **añadir en Vercel**
    (Production) `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET` y redeploy. Probar con
    `/api/cron/daily-followups?key=<CRON_SECRET>`. ⚠️ Sin dominio verificado, Resend en modo prueba
@@ -300,7 +307,10 @@ usuario:**
      en el pool "Unassigned" ya etiquetado con la campaña del enlace.
    - **Fase 3 (futuro):** reparto round-robin automático entre comerciales.
    Ya existe base: `lead_source` (incluye instagram) y "Unassigned" como assigned_to.
-7. (Opcional/futuro) Estados de obra, más analítica, etc.
+7. (Extra ofrecido, sin empezar) **Feed iCal por comercial**: URL secreta a la que suscribir el
+   calendario del móvil (una dirección CRM→móvil, read-only) para ver sus follow-ups en el móvil.
+   Simple y robusto vs. sync bidireccional con Google Calendar (descartado por complejo para 4 personas).
+8. (Opcional/futuro) Más analítica, estados de obra avanzados, etc.
 
 ---
 
