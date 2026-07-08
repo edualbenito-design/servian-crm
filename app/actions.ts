@@ -248,6 +248,39 @@ export async function completeFollowUp(
   return { doneAt, doneBy };
 }
 
+// Edit a follow-up's fields (fix a wrong date/note, or tweak the result note on
+// a done one) without deleting and recreating it.
+export async function editFollowUp(
+  clientId: string,
+  followUpId: string,
+  dueDate: string,
+  note: string,
+  doneNote?: string
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const patch: Record<string, unknown> = {
+    due_date: dueDate,
+    note: note.trim() || null,
+  };
+  if (doneNote !== undefined) patch.done_note = doneNote.trim() || null;
+  const { data, error } = await db
+    .from("follow_ups")
+    .update(patch)
+    .eq("id", followUpId)
+    .eq("client_id", clientId)
+    .select("project_id")
+    .single();
+  if (error) throw new Error(error.message);
+  await logActivity(
+    clientId,
+    "note",
+    `✏️ Follow-up edited`,
+    (data?.project_id as string | null) ?? null
+  );
+  revalidateFollowUp(clientId);
+}
+
 // Remove a follow-up entirely (e.g. created by mistake).
 export async function deleteFollowUp(
   clientId: string,
@@ -861,6 +894,51 @@ export async function addPayment(
     note: data.note ?? undefined,
     createdBy: data.created_by ?? undefined,
     createdAt: data.created_at,
+  };
+}
+
+// Edit an existing payment (fix a typo'd amount, wrong method/date…). Keeps any
+// attached receipt untouched. Resilient to a missing milestone column.
+export async function updatePayment(
+  clientId: string,
+  paymentId: string,
+  fields: PaymentFields
+): Promise<{ amount: number; method: PaymentMethod; paidOn: string; milestone?: string; note?: string }> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const amount = Math.max(0, Number(fields.amount) || 0);
+  const base = {
+    amount,
+    method: fields.method,
+    paid_on: fields.paidOn || new Date().toISOString().slice(0, 10),
+    note: fields.note.trim() || null,
+  };
+  let { error } = await db
+    .from("payments")
+    .update({ ...base, milestone: fields.milestone.trim() || null })
+    .eq("id", paymentId)
+    .eq("client_id", clientId);
+  if (error) {
+    ({ error } = await db
+      .from("payments")
+      .update(base)
+      .eq("id", paymentId)
+      .eq("client_id", clientId));
+  }
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    clientId,
+    "note",
+    `✏️ Payment edited: AED ${amount.toLocaleString("en-AE")}`
+  );
+  revalidatePath(`/clients/${clientId}`);
+  return {
+    amount,
+    method: fields.method,
+    paidOn: base.paid_on,
+    milestone: fields.milestone.trim() || undefined,
+    note: fields.note.trim() || undefined,
   };
 }
 

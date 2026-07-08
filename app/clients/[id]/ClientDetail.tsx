@@ -22,7 +22,7 @@ import {
   type PipelineStage,
   type Salesperson,
 } from "@/lib/data";
-import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, setProjectMilestones, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
+import { updateClient, addFollowUp, completeFollowUp, rescheduleFollowUp, editFollowUp, deleteFollowUp, attachFollowUpFile, removeFollowUpFile, createProject, updateProject, setProjectMilestones, addNote, addProjectNote, setProjectApproval, requestClientDeletion, cancelClientDeletion, deleteClient, requestProjectDeletion, cancelProjectDeletion, deleteProject } from "@/app/actions";
 import { AttachmentControl } from "./AttachmentControl"; // optional file per payment/follow-up
 import { SiteProgress } from "./SiteProgress"; // construction milestones
 import { QuotesSection } from "./QuotesSection";
@@ -735,6 +735,7 @@ function ProjectCard({
   onAddFollowUp,
   onCompleteFollowUp,
   onRescheduleFollowUp,
+  onEditFollowUp,
   onDeleteFollowUp,
   onAttachFollowUp,
   onRemoveFollowUpAttachment,
@@ -752,6 +753,7 @@ function ProjectCard({
   onAddFollowUp: (dueDate: string, note: string) => Promise<void>;
   onCompleteFollowUp: (id: string, doneNote: string) => Promise<void>;
   onRescheduleFollowUp: (id: string, newDate: string, reason: string) => Promise<void>;
+  onEditFollowUp: (id: string, dueDate: string, note: string, doneNote?: string) => Promise<void>;
   onDeleteFollowUp: (id: string) => Promise<void>;
   onAttachFollowUp: (id: string, file: File) => Promise<void>;
   onRemoveFollowUpAttachment: (id: string, path: string) => Promise<void>;
@@ -1018,6 +1020,7 @@ function ProjectCard({
               onAdd={onAddFollowUp}
               onComplete={onCompleteFollowUp}
               onReschedule={onRescheduleFollowUp}
+              onEdit={onEditFollowUp}
               onDelete={onDeleteFollowUp}
               onAttach={onAttachFollowUp}
               onRemoveAttachment={onRemoveFollowUpAttachment}
@@ -1079,6 +1082,7 @@ function FollowUps({
   onAdd,
   onComplete,
   onReschedule,
+  onEdit,
   onDelete,
   onAttach,
   onRemoveAttachment,
@@ -1087,6 +1091,7 @@ function FollowUps({
   onAdd: (dueDate: string, note: string) => Promise<void>;
   onComplete: (id: string, doneNote: string) => Promise<void>;
   onReschedule: (id: string, newDate: string, reason: string) => Promise<void>;
+  onEdit: (id: string, dueDate: string, note: string, doneNote?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onAttach: (id: string, file: File) => Promise<void>;
   onRemoveAttachment: (id: string, path: string) => Promise<void>;
@@ -1094,9 +1099,10 @@ function FollowUps({
   const [adding, setAdding] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newNote, setNewNote] = useState("");
-  const [action, setAction] = useState<{ id: string; kind: "done" | "move" } | null>(null);
+  const [action, setAction] = useState<{ id: string; kind: "done" | "move" | "edit"; isDone: boolean } | null>(null);
   const [actionNote, setActionNote] = useState("");
   const [actionDate, setActionDate] = useState("");
+  const [actionDoneNote, setActionDoneNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -1120,23 +1126,103 @@ function FollowUps({
     }
   }
 
-  function openAction(id: string, kind: "done" | "move", currentDate?: string) {
-    setAction({ id, kind });
-    setActionNote("");
-    setActionDate(kind === "move" ? currentDate ?? "" : "");
+  function openAction(f: FollowUp, kind: "done" | "move" | "edit") {
+    const isDone = f.status === "done";
+    setAction({ id: f.id, kind, isDone });
+    // Prefill depending on the action.
+    setActionDate(kind === "move" || kind === "edit" ? f.dueDate : "");
+    setActionNote(kind === "edit" ? f.note ?? "" : "");
+    setActionDoneNote(kind === "edit" ? f.doneNote ?? "" : "");
   }
 
   async function submitAction() {
     if (!action) return;
-    if (action.kind === "move" && !actionDate) return;
+    if ((action.kind === "move" || action.kind === "edit") && !actionDate) return;
     setBusy(true);
     try {
       if (action.kind === "done") await onComplete(action.id, actionNote);
-      else await onReschedule(action.id, actionDate, actionNote);
+      else if (action.kind === "move") await onReschedule(action.id, actionDate, actionNote);
+      else
+        await onEdit(
+          action.id,
+          actionDate,
+          actionNote,
+          action.isDone ? actionDoneNote : undefined
+        );
       setAction(null);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Inline form for the current action on follow-up `f` (returns plain JSX, not a
+  // component, so the textarea keeps focus while typing).
+  function actionForm(f: FollowUp) {
+    if (!action || action.id !== f.id) return null;
+    const kind = action.kind;
+    return (
+      <div className="space-y-2 pt-1">
+        {(kind === "move" || kind === "edit") && (
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={actionDate}
+              onChange={(e) => setActionDate(e.target.value)}
+              className={INPUT}
+            />
+            {kind === "move" && (
+              <button
+                type="button"
+                onClick={() => setActionDate(tomorrowYMD())}
+                className="shrink-0 px-2.5 py-2 rounded-lg border border-(--border) text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) whitespace-nowrap"
+              >
+                Tomorrow
+              </button>
+            )}
+          </div>
+        )}
+        <textarea
+          value={actionNote}
+          onChange={(e) => setActionNote(e.target.value)}
+          rows={2}
+          placeholder={
+            kind === "done"
+              ? "What did you do? (e.g. Sent WhatsApp, awaiting payment proof)"
+              : kind === "move"
+                ? "Why move it? (e.g. Client asked to call after the weekend)"
+                : "Note (optional)"
+          }
+          className={INPUT}
+        />
+        {kind === "edit" && action.isDone && (
+          <textarea
+            value={actionDoneNote}
+            onChange={(e) => setActionDoneNote(e.target.value)}
+            rows={2}
+            placeholder="Result note (what was done)"
+            className={INPUT}
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={busy || ((kind === "move" || kind === "edit") && !actionDate)}
+            onClick={submitAction}
+            className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
+          >
+            {busy ? "Saving…" : kind === "done" ? "Confirm done" : kind === "move" ? "Move" : "Save"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setAction(null)}
+            className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
   }
 
   function badgeTone(due: string) {
@@ -1192,69 +1278,29 @@ function FollowUps({
             </div>
 
             {action?.id === f.id ? (
-              <div className="space-y-2 pt-1">
-                {action.kind === "move" && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={actionDate}
-                      onChange={(e) => setActionDate(e.target.value)}
-                      className={INPUT}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setActionDate(tomorrowYMD())}
-                      className="shrink-0 px-2.5 py-2 rounded-lg border border-(--border) text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) whitespace-nowrap"
-                    >
-                      Tomorrow
-                    </button>
-                  </div>
-                )}
-                <textarea
-                  value={actionNote}
-                  onChange={(e) => setActionNote(e.target.value)}
-                  rows={2}
-                  placeholder={
-                    action.kind === "done"
-                      ? "What did you do? (e.g. Sent WhatsApp, awaiting payment proof)"
-                      : "Why move it? (e.g. Client asked to call after the weekend)"
-                  }
-                  className={INPUT}
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={busy || (action.kind === "move" && !actionDate)}
-                    onClick={submitAction}
-                    className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-1.5 disabled:opacity-50"
-                  >
-                    {busy ? "Saving…" : action.kind === "done" ? "Confirm done" : "Move"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setAction(null)}
-                    className="px-3 py-1.5 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              actionForm(f)
             ) : (
               <div className="flex items-center gap-2 pt-0.5">
                 <button
                   type="button"
-                  onClick={() => openAction(f.id, "done")}
+                  onClick={() => openAction(f, "done")}
                   className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
                 >
                   ✓ Done
                 </button>
                 <button
                   type="button"
-                  onClick={() => openAction(f.id, "move", f.dueDate)}
+                  onClick={() => openAction(f, "move")}
                   className="px-2.5 py-1 rounded-lg text-xs font-medium border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
                 >
                   Move
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAction(f, "edit")}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
+                >
+                  Edit
                 </button>
                 <button
                   type="button"
@@ -1372,6 +1418,26 @@ function FollowUps({
                       label="screenshot"
                     />
                   </div>
+                  {action?.id === f.id ? (
+                    actionForm(f)
+                  ) : (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openAction(f, "edit")}
+                        className="text-xs font-medium text-(--text-muted) hover:text-(--accent) transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(f.id)}
+                        className="text-xs font-medium text-(--text-muted) hover:text-red-500 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1621,6 +1687,30 @@ export function ClientDetail({
   async function deleteFollowUpHandler(projectId: string | null, id: string) {
     updateFollowUpList(projectId, (list) => list.filter((f) => f.id !== id));
     await deleteFollowUp(client.id, id);
+  }
+
+  async function editFollowUpHandler(
+    projectId: string | null,
+    id: string,
+    dueDate: string,
+    note: string,
+    doneNote?: string
+  ) {
+    updateFollowUpList(projectId, (list) =>
+      list.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              dueDate,
+              note: note.trim() || undefined,
+              doneNote:
+                doneNote !== undefined ? doneNote.trim() || undefined : f.doneNote,
+            }
+          : f
+      )
+    );
+    pushFollowUpActivity(projectId, "✏️ Follow-up edited");
+    await editFollowUp(client.id, id, dueDate, note, doneNote);
   }
 
   async function attachFollowUpFileHandler(
@@ -1982,6 +2072,7 @@ export function ClientDetail({
               onAdd={(d, n) => addFollowUpHandler(null, d, n)}
               onComplete={(id, n) => completeFollowUpHandler(null, id, n)}
               onReschedule={(id, d, r) => rescheduleFollowUpHandler(null, id, d, r)}
+              onEdit={(id, d, n, dn) => editFollowUpHandler(null, id, d, n, dn)}
               onDelete={(id) => deleteFollowUpHandler(null, id)}
               onAttach={(id, file) => attachFollowUpFileHandler(null, id, file)}
               onRemoveAttachment={(id, path) =>
@@ -2172,6 +2263,9 @@ export function ClientDetail({
                     }
                     onRescheduleFollowUp={(id, d, r) =>
                       rescheduleFollowUpHandler(project.id, id, d, r)
+                    }
+                    onEditFollowUp={(id, d, n, dn) =>
+                      editFollowUpHandler(project.id, id, d, n, dn)
                     }
                     onDeleteFollowUp={(id) => deleteFollowUpHandler(project.id, id)}
                     onAttachFollowUp={(id, file) =>

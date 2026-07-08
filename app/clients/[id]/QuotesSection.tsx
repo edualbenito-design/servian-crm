@@ -19,6 +19,7 @@ import {
   setQuoteStatus,
   deleteQuote,
   addPayment,
+  updatePayment,
   deletePayment,
   createInvoice,
   attachPaymentReceipt,
@@ -118,6 +119,7 @@ function toForm(q: Quote): Form {
 function PaymentsPanel({
   quote,
   onAdd,
+  onUpdate,
   onDelete,
   onInvoice,
   onAttachReceipt,
@@ -132,6 +134,16 @@ function PaymentsPanel({
     note: string;
   }) => Promise<void>;
   onDelete: (paymentId: string) => Promise<void>;
+  onUpdate: (
+    paymentId: string,
+    fields: {
+      amount: number;
+      method: PaymentMethod;
+      paidOn: string;
+      milestone: string;
+      note: string;
+    }
+  ) => Promise<void>;
   onInvoice: () => Promise<string>;
   onAttachReceipt: (paymentId: string, file: File) => Promise<void>;
   onRemoveReceipt: (paymentId: string, path: string) => Promise<void>;
@@ -140,6 +152,7 @@ function PaymentsPanel({
   const { paid, balance, status, pctPaid } = paymentSummary(total, quote.payments);
 
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
@@ -156,6 +169,7 @@ function PaymentsPanel({
 
   function openForm() {
     const willSettle = balance > 0 && Math.round(balance) >= balance;
+    setEditingId(null);
     setAmount(balance > 0 ? String(Math.round(balance)) : "");
     setMethod("bank");
     setPaidOn(new Date().toISOString().slice(0, 10));
@@ -165,14 +179,29 @@ function PaymentsPanel({
     setAdding(true);
   }
 
+  function openEdit(p: Quote["payments"][number]) {
+    setEditingId(p.id);
+    setAmount(String(p.amount));
+    setMethod(p.method);
+    setPaidOn(p.paidOn);
+    setMilestone(p.milestone || "First payment");
+    setNote(p.note ?? "");
+    setAdding(true);
+  }
+
   async function submit() {
     if (busy) return;
     const amt = Number(amount) || 0;
     if (amt <= 0) return;
     setBusy(true);
     try {
-      await onAdd({ amount: amt, method, paidOn, milestone, note });
+      if (editingId) {
+        await onUpdate(editingId, { amount: amt, method, paidOn, milestone, note });
+      } else {
+        await onAdd({ amount: amt, method, paidOn, milestone, note });
+      }
       setAdding(false);
+      setEditingId(null);
     } finally {
       setBusy(false);
     }
@@ -289,6 +318,17 @@ function PaymentsPanel({
                 />
                 <button
                   type="button"
+                  onClick={() => openEdit(p)}
+                  className="text-(--text-muted) hover:text-(--accent) transition-colors"
+                  title="Edit payment"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onDelete(p.id)}
                   className="text-(--text-muted) hover:text-red-500 transition-colors"
                   title="Remove payment"
@@ -337,11 +377,11 @@ function PaymentsPanel({
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} placeholder="e.g. Cleared via WIO, ref 12345" />
           </div>
           <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => setAdding(false)} className="px-3 py-1.5 text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors">
+            <button type="button" onClick={() => { setAdding(false); setEditingId(null); }} className="px-3 py-1.5 text-xs font-medium text-(--text-secondary) hover:text-(--text-primary) transition-colors">
               Cancel
             </button>
             <button type="button" onClick={submit} disabled={busy || !(Number(amount) > 0)} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors disabled:opacity-50">
-              {busy ? "Saving…" : "Record payment"}
+              {busy ? "Saving…" : editingId ? "Save changes" : "Record payment"}
             </button>
           </div>
         </div>
@@ -472,6 +512,42 @@ export function QuotesSection({
         x.id === q.id ? { ...x, payments: [...x.payments, created] } : x
       )
     );
+  }
+
+  async function updatePay(
+    q: Quote,
+    paymentId: string,
+    fields: {
+      amount: number;
+      method: PaymentMethod;
+      paidOn: string;
+      milestone: string;
+      note: string;
+    }
+  ) {
+    // Optimistic: patch the payment in place (keep its receipt).
+    setQuotes((prev) =>
+      prev.map((x) =>
+        x.id === q.id
+          ? {
+              ...x,
+              payments: x.payments.map((p) =>
+                p.id === paymentId
+                  ? {
+                      ...p,
+                      amount: fields.amount,
+                      method: fields.method,
+                      paidOn: fields.paidOn,
+                      milestone: fields.milestone || undefined,
+                      note: fields.note.trim() || undefined,
+                    }
+                  : p
+              ),
+            }
+          : x
+      )
+    );
+    await updatePayment(clientId, paymentId, fields);
   }
 
   async function removePay(q: Quote, paymentId: string) {
@@ -636,6 +712,7 @@ export function QuotesSection({
                   <PaymentsPanel
                     quote={q}
                     onAdd={(fields) => addPay(q, fields)}
+                    onUpdate={(paymentId, fields) => updatePay(q, paymentId, fields)}
                     onDelete={(paymentId) => removePay(q, paymentId)}
                     onInvoice={() => makeInvoice(q)}
                     onAttachReceipt={(paymentId, file) =>
