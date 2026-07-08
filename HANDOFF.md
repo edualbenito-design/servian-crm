@@ -189,6 +189,10 @@ usuario:**
    archiva directo con confirmación. `getClients`/`getClient`/`toClient` ocultan archivados.
 9. **Estilo:** componentes funcionales, comentarios escuetos en inglés, mismo patrón que el código
    existente (mira ClientsTable/ClientDetail/QuotesSection antes de crear UI nueva).
+10. **EDITAR EN TODO (regla del usuario):** cualquier dato que el usuario introduzca debe poder
+    **editarse in situ** con un botón "Editar" (nunca borrar+recrear). Aplica a features nuevas.
+    Patrón: acción `update*`/`edit*` + estado optimista, preservando adjuntos/relaciones. Ya hecho en
+    `updatePayment` y `editFollowUp`.
 
 ---
 

@@ -67,6 +67,9 @@
 - [x] **Hitos de obra (% de avance)**: checklist editable por proyecto, barra de progreso.
   SQL: `sql/2026-07-07-site-progress.sql`
 - [x] **Calendario tipo agenda**: día dividido en To-do / Done that day (historial de lo hecho)
+- [x] **Editar pagos y follow-ups** in situ (botón editar, no borrar+recrear) — regla para todo lo nuevo
+- [x] **Calendario drag & drop**: arrastrar un follow-up a otro día para reprogramar + nota rápida
+- [x] **Collections por mes**: desglose cobrado/pendiente por mes + filtros clicables (overdue/current)
 - [x] **Aviso de advance payment antes de empezar**: si la obra arranca (≤7 días o ya empezó) y no
   ha entrado el 50%, banner rojo + chip en la ficha del proyecto y aviso arriba del calendario.
   Sin SQL (calculado desde fecha de inicio + pagos).
