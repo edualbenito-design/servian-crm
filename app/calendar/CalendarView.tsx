@@ -132,6 +132,12 @@ export function CalendarView({
   const [actionDate, setActionDate] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Drag & drop: drag a pending item onto a day to reschedule it.
+  const [dragItem, setDragItem] = useState<PendingItem | null>(null);
+  const [overDate, setOverDate] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ item: PendingItem; newDate: string } | null>(null);
+  const [dropNote, setDropNote] = useState("");
+
   // Group by date: pending on their due day, done on the day they were done.
   const pendingByDate = new Map<string, PendingItem[]>();
   for (const it of pending) {
@@ -208,6 +214,32 @@ export function CalendarView({
         )
       );
       setAction(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Drop a dragged item onto a day → open the quick-note confirm.
+  function onDropDay(dateStr: string) {
+    setOverDate(null);
+    const item = dragItem;
+    setDragItem(null);
+    if (!item || item.dueDate === dateStr) return;
+    setDropNote("");
+    setDrop({ item, newDate: dateStr });
+  }
+
+  async function confirmDrop() {
+    if (!drop) return;
+    setBusy(true);
+    try {
+      await rescheduleFollowUp(drop.item.clientId, drop.item.followUpId, drop.newDate, dropNote);
+      setPending((prev) =>
+        prev.map((x) =>
+          x.followUpId === drop.item.followUpId ? { ...x, dueDate: drop.newDate } : x
+        )
+      );
+      setDrop(null);
     } finally {
       setBusy(false);
     }
@@ -348,8 +380,20 @@ export function CalendarView({
                     setSelected(dateStr);
                     setAction(null);
                   }}
+                  onDragOver={(e) => {
+                    if (dragItem) {
+                      e.preventDefault();
+                      setOverDate(dateStr);
+                    }
+                  }}
+                  onDragLeave={() => setOverDate((d) => (d === dateStr ? null : d))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    onDropDay(dateStr);
+                  }}
                   className={`relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-colors
                     ${isSelected ? "ring-2 ring-(--accent)" : ""}
+                    ${overDate === dateStr ? "ring-2 ring-(--accent) bg-(--accent)/10" : ""}
                     ${isToday ? "font-bold" : ""}
                     ${tone || "hover:bg-(--surface) text-(--text-secondary)"}`}
                 >
@@ -401,6 +445,11 @@ export function CalendarView({
               <p className="text-xs font-semibold text-(--text-muted) uppercase tracking-widest">
                 To do · {selectedPending.length}
               </p>
+              {selectedPending.length > 0 && (
+                <p className="hidden lg:block text-[10px] text-(--text-muted) mt-0.5 normal-case tracking-normal">
+                  Tip: drag an item onto a day to reschedule it.
+                </p>
+              )}
             </div>
             {selectedPending.length === 0 ? (
               <div className="px-4 py-5 text-center text-sm text-(--text-muted)">
@@ -409,7 +458,18 @@ export function CalendarView({
             ) : (
               <div className="divide-y divide-(--border)">
                 {selectedPending.map((c) => (
-                  <div key={c.followUpId} className="px-4 py-3 space-y-2">
+                  <div
+                    key={c.followUpId}
+                    draggable
+                    onDragStart={() => setDragItem(c)}
+                    onDragEnd={() => {
+                      setDragItem(null);
+                      setOverDate(null);
+                    }}
+                    className={`px-4 py-3 space-y-2 cursor-grab active:cursor-grabbing ${
+                      dragItem?.followUpId === c.followUpId ? "opacity-50" : ""
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <Link href={`/clients/${c.clientId}`} className="min-w-0 flex-1 group">
                         <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
@@ -537,6 +597,53 @@ export function CalendarView({
           </div>
         </div>
       </div>
+
+      {/* Drag-to-reschedule confirm (quick note) */}
+      {drop && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDrop(null)}
+        >
+          <div
+            className="bg-(--card) border border-(--border) rounded-xl p-5 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-(--text-primary)">
+              Move follow-up
+            </p>
+            <p className="text-sm text-(--text-secondary) mt-1">
+              <span className="font-medium">{drop.item.name}</span> →{" "}
+              {formatLong(drop.newDate)}
+            </p>
+            <textarea
+              value={dropNote}
+              onChange={(e) => setDropNote(e.target.value)}
+              rows={2}
+              autoFocus
+              placeholder="Quick note — why move it? (optional)"
+              className="mt-3 w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50"
+            />
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={confirmDrop}
+                className="flex-1 bg-(--accent) text-white dark:text-black text-sm font-semibold rounded-lg py-2 disabled:opacity-50"
+              >
+                {busy ? "Saving…" : "Move"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setDrop(null)}
+                className="px-3 py-2 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary)"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
