@@ -172,10 +172,27 @@ export function CollectionsView({
   isManager: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [month, setMonth] = useState<string | null>(null);
+  // Selected months to filter by (empty = all months). Multi-select so you can
+  // look at one month, several, or a whole year at once.
+  const [months, setMonths] = useState<Set<string>>(new Set());
   // Which category rows are expanded to reveal the projects inside them.
   const [openCommercial, setOpenCommercial] = useState<string | null>(null);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
+
+  const monthOptions = collectedByMonth.map((m) => m.month); // 12 months, old→new
+  const currentYear = String(new Date().getFullYear());
+
+  function toggleMonth(m: string) {
+    setMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
+  }
+  const selectAllMonths = () => setMonths(new Set());
+  const selectYear = (year: string) =>
+    setMonths(new Set(monthOptions.filter((m) => m.startsWith(year))));
 
   const summary = collectionsSummary(receivables);
   const byCommercial = outstandingByCommercial(receivables);
@@ -195,13 +212,22 @@ export function CollectionsView({
   const filtered = receivables.filter((r) => {
     if (filter === "overdue" && r.ageDays <= OVERDUE_DAYS) return false;
     if (filter === "current" && r.ageDays > OVERDUE_DAYS) return false;
-    if (month && r.sinceDate.slice(0, 7) !== month) return false;
+    if (months.size > 0 && !months.has(r.sinceDate.slice(0, 7))) return false;
     return true;
   });
 
   function toggleFilter(f: Filter) {
     setFilter((prev) => (prev === f ? "all" : f));
   }
+
+  // Aggregate totals for the currently selected months (all when none picked).
+  const inMonths = (key: string) => months.size === 0 || months.has(key);
+  const selectedOutstanding = receivables
+    .filter((r) => inMonths(r.sinceDate.slice(0, 7)))
+    .reduce((s, r) => s + r.balance, 0);
+  const selectedCollected = collectedByMonth
+    .filter((m) => inMonths(m.month))
+    .reduce((s, m) => s + m.amount, 0);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
@@ -221,10 +247,10 @@ export function CollectionsView({
         <Kpi
           label="Outstanding · AED"
           value={money(summary.totalOutstanding)}
-          active={filter === "all" && !month}
+          active={filter === "all" && months.size === 0}
           onClick={() => {
             setFilter("all");
-            setMonth(null);
+            selectAllMonths();
           }}
         />
         <Kpi label="Open receivables" value={String(summary.count)} />
@@ -250,6 +276,67 @@ export function CollectionsView({
         </div>
       ) : (
         <>
+          {/* Month filter — multi-select: one month, several, or a whole year */}
+          <div className="mb-6 bg-(--card) border border-(--border) rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+              <h2 className="text-sm font-semibold text-(--text-primary)">
+                Filter by month
+              </h2>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => selectYear(currentYear)}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-(--surface) border border-(--border) text-(--text-secondary) hover:text-(--text-primary) transition-colors"
+                >
+                  {currentYear}
+                </button>
+                <button
+                  type="button"
+                  onClick={selectAllMonths}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                    months.size === 0
+                      ? "bg-(--accent) text-white dark:text-black"
+                      : "bg-(--surface) border border-(--border) text-(--text-secondary) hover:text-(--text-primary)"
+                  }`}
+                >
+                  All
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {[...monthOptions].reverse().map((m) => {
+                const on = months.has(m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => toggleMonth(m)}
+                    className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                      on
+                        ? "bg-(--accent) text-white dark:text-black"
+                        : "bg-(--surface) border border-(--border) text-(--text-secondary) hover:text-(--text-primary)"
+                    }`}
+                  >
+                    {monthLabel(m)}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs text-(--text-muted)">
+              {months.size === 0
+                ? "All months"
+                : `${months.size} month${months.size > 1 ? "s" : ""} selected`}
+              {" · "}
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                {money(selectedCollected)} collected
+              </span>
+              {" · "}
+              <span className="text-(--text-primary) font-medium">
+                {money(selectedOutstanding)} outstanding
+              </span>
+            </p>
+          </div>
+
           <div className={`grid gap-6 mb-6 ${isManager ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
             {/* By month */}
             <div className="bg-(--card) border border-(--border) rounded-xl p-5">
@@ -264,7 +351,7 @@ export function CollectionsView({
                 </div>
                 {collectedByMonth.map((m) => {
                   const pend = pendingByMonth.get(m.month) ?? 0;
-                  const isActive = month === m.month;
+                  const isActive = months.has(m.month);
                   const isOpen = openMonth === m.month;
                   const rows = receivablesFor((r) => r.sinceDate.slice(0, 7) === m.month);
                   const pays = paymentsFor((p) => p.paidOn.slice(0, 7) === m.month);
@@ -302,8 +389,10 @@ export function CollectionsView({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setMonth(isActive ? null : m.month)}
-                            className="text-(--text-secondary) hover:text-(--accent) truncate"
+                            onClick={() => toggleMonth(m.month)}
+                            className={`truncate hover:text-(--accent) ${
+                              isActive ? "text-(--accent) font-medium" : "text-(--text-secondary)"
+                            }`}
                           >
                             {monthLabel(m.month)}
                           </button>
@@ -347,13 +436,13 @@ export function CollectionsView({
                   );
                 })}
               </div>
-              {month && (
+              {months.size > 0 && (
                 <button
                   type="button"
-                  onClick={() => setMonth(null)}
+                  onClick={selectAllMonths}
                   className="mt-2 text-xs font-medium text-(--accent) hover:underline"
                 >
-                  Clear month filter ({monthLabel(month)})
+                  Clear month filter ({months.size} selected)
                 </button>
               )}
             </div>
@@ -459,7 +548,7 @@ export function CollectionsView({
             ))}
             <span className="text-xs text-(--text-muted)">
               {filtered.length} of {receivables.length}
-              {month ? ` · ${monthLabel(month)}` : ""}
+              {months.size > 0 ? ` · ${months.size} month${months.size > 1 ? "s" : ""}` : ""}
             </span>
           </div>
 

@@ -664,8 +664,9 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
   // Most recent payments first.
   collectedPayments.sort((a, b) => (a.paidOn < b.paidOn ? 1 : a.paidOn > b.paidOn ? -1 : 0));
   // Last 6 months (oldest → newest) of collections.
+  // Rolling 12 months (oldest → newest) so a whole-year view is possible.
   const collectedByMonth: { month: string; amount: number }[] = [];
-  for (let i = 5; i >= 0; i--) {
+  for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     collectedByMonth.push({ month: key, amount: collectedByMonthMap.get(key) ?? 0 });
