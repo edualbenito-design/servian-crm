@@ -9,6 +9,7 @@ import {
   CAPTURERS,
   followUpState,
   advanceAlert,
+  quoteTotals,
   ADVANCE_PCT,
   type Client,
   type Project,
@@ -1574,6 +1575,22 @@ export function ClientDetail({
   const totalBudget = client.projects.reduce((s, p) => s + p.budget, 0);
   const activeCount = client.projects.filter((p) => p.status === "active").length;
   const completedCount = client.projects.filter((p) => p.status === "completed").length;
+  // Real money: everything paid so far, and what's still owed on accepted quotes.
+  const totalPaid = client.projects.reduce(
+    (s, p) =>
+      s + p.quotes.reduce((qs, q) => qs + q.payments.reduce((ps, pay) => ps + pay.amount, 0), 0),
+    0
+  );
+  const totalOutstanding = client.projects.reduce(
+    (s, p) =>
+      s +
+      p.quotes.reduce((qs, q) => {
+        if (q.status !== "accepted") return qs;
+        const paid = q.payments.reduce((ps, pay) => ps + pay.amount, 0);
+        return qs + Math.max(0, quoteTotals(q).total - paid);
+      }, 0),
+    0
+  );
 
   // ── client modal ────────────────────────────────────────────────────────────
 
@@ -2184,13 +2201,29 @@ export function ClientDetail({
                   {completedCount}
                 </span>
               </div>
-              <div className="pt-2 border-t border-(--border)">
+              <div className="pt-2 border-t border-(--border) space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-(--text-muted)">
                     Total Portfolio
                   </span>
                   <span className="text-sm font-bold text-(--accent) font-mono">
                     {formatCurrency(totalBudget)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-(--text-muted)">Total Paid</span>
+                  <span className="text-sm font-bold text-emerald-500 font-mono">
+                    {formatCurrency(totalPaid)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-(--text-muted)">Outstanding</span>
+                  <span
+                    className={`text-sm font-bold font-mono ${
+                      totalOutstanding > 0 ? "text-amber-500" : "text-(--text-secondary)"
+                    }`}
+                  >
+                    {formatCurrency(totalOutstanding)}
                   </span>
                 </div>
               </div>
