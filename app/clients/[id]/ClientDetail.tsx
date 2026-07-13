@@ -760,11 +760,23 @@ function ProjectCard({
   onMilestonesChange: (milestones: Milestone[], logNote?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   const nowD = new Date();
   const todayStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}-${String(nowD.getDate()).padStart(2, "0")}`;
   const advance = advanceAlert(project, todayStr);
+
+  // When linked from elsewhere (e.g. Collections) with #project-<id>, open and
+  // scroll this card into view.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === `#project-${project.id}`) {
+      setOpen(true);
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [project.id]);
+
   return (
-    <div className="hover:bg-(--surface)/30 transition-colors">
+    <div id={`project-${project.id}`} ref={cardRef} className="scroll-mt-24 hover:bg-(--surface)/30 transition-colors">
       {/* Clickable header (always visible) */}
       <div
         onClick={() => setOpen((v) => !v)}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Receivable } from "@/lib/db";
+import type { Receivable, CollectedPayment } from "@/lib/db";
 import {
   collectionsSummary,
   outstandingByCommercial,
@@ -98,22 +98,92 @@ function WhatsApp({ phone }: { phone: string }) {
   );
 }
 
+function dayLabel(iso: string) {
+  const d = new Date(iso + "T00:00:00");
+  return isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString("en-AE", { day: "2-digit", month: "short" });
+}
+
+// Compact paid-payment row: who paid, which project, how much, when.
+// Links straight to the project inside the client page.
+function PaymentSummary({ p }: { p: CollectedPayment }) {
+  return (
+    <Link
+      href={`/clients/${p.clientId}#project-${p.projectId}`}
+      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-(--surface) transition-colors group"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-(--text-primary) truncate group-hover:text-(--accent)">
+          {p.clientName}
+        </p>
+        <p className="text-xs text-(--text-muted) truncate">
+          {p.projectName}
+          {p.milestone ? ` · ${p.milestone}` : ""} · {p.method}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+          {money(p.amount)}
+        </p>
+        <p className="text-[11px] text-(--text-muted)">{dayLabel(p.paidOn)}</p>
+      </div>
+    </Link>
+  );
+}
+
+// Compact receivable row shown when a category (commercial / month) is expanded.
+// Links straight to the project inside the client page.
+function ReceivableSummary({ r }: { r: Receivable }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-(--surface) transition-colors">
+      <Link
+        href={`/clients/${r.clientId}#project-${r.projectId}`}
+        className="min-w-0 flex-1 group"
+      >
+        <p className="text-sm font-medium text-(--text-primary) truncate group-hover:text-(--accent)">
+          {r.clientName}
+        </p>
+        <p className="text-xs text-(--text-muted) truncate">
+          {r.projectName} · {r.invoiceNumber || r.number}
+        </p>
+      </Link>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-semibold text-(--text-primary)">{money(r.balance)}</p>
+        <p className="text-[11px] text-(--text-muted)">of {money(r.total)}</p>
+      </div>
+      <AgeBadge days={r.ageDays} />
+      <WhatsApp phone={r.clientPhone} />
+    </div>
+  );
+}
+
 export function CollectionsView({
   receivables,
   collectedThisMonth,
   collectedByMonth,
+  collectedPayments,
   isManager,
 }: {
   receivables: Receivable[];
   collectedThisMonth: number;
   collectedByMonth: { month: string; amount: number }[];
+  collectedPayments: CollectedPayment[];
   isManager: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [month, setMonth] = useState<string | null>(null);
+  // Which category rows are expanded to reveal the projects inside them.
+  const [openCommercial, setOpenCommercial] = useState<string | null>(null);
+  const [openMonth, setOpenMonth] = useState<string | null>(null);
 
   const summary = collectionsSummary(receivables);
   const byCommercial = outstandingByCommercial(receivables);
+
+  const receivablesFor = (predicate: (r: Receivable) => boolean) =>
+    receivables.filter(predicate);
+  const paymentsFor = (predicate: (p: CollectedPayment) => boolean) =>
+    collectedPayments.filter(predicate);
 
   // Pending per month (by the receivable's invoice/issue month).
   const pendingByMonth = new Map<string, number>();
@@ -140,7 +210,9 @@ export function CollectionsView({
           Collections
         </h1>
         <p className="mt-1 text-sm text-(--text-secondary)">
-          Money owed on accepted quotes. Tap a card or month to filter the list below.
+          Money owed on accepted quotes. Tap a card or month to filter; expand a month
+          or commercial (chevron) to see who paid and what&apos;s still owed — click any
+          row to open that client and project.
         </p>
       </div>
 
@@ -193,27 +265,85 @@ export function CollectionsView({
                 {collectedByMonth.map((m) => {
                   const pend = pendingByMonth.get(m.month) ?? 0;
                   const isActive = month === m.month;
+                  const isOpen = openMonth === m.month;
+                  const rows = receivablesFor((r) => r.sinceDate.slice(0, 7) === m.month);
+                  const pays = paymentsFor((p) => p.paidOn.slice(0, 7) === m.month);
+                  const canExpand = rows.length > 0 || pays.length > 0;
                   return (
-                    <button
-                      key={m.month}
-                      type="button"
-                      onClick={() => setMonth(isActive ? null : m.month)}
-                      className={`w-full grid grid-cols-3 items-center text-sm rounded-lg px-2 py-1.5 transition-colors ${
-                        isActive
-                          ? "bg-(--accent)/10 ring-1 ring-(--accent)/30"
-                          : "hover:bg-(--surface)"
-                      }`}
-                    >
-                      <span className="text-(--text-secondary) text-left">
-                        {monthLabel(m.month)}
-                      </span>
-                      <span className="text-right font-mono text-emerald-600 dark:text-emerald-400">
-                        {m.amount > 0 ? money(m.amount) : "—"}
-                      </span>
-                      <span className="text-right font-mono text-(--text-primary)">
-                        {pend > 0 ? money(pend) : "—"}
-                      </span>
-                    </button>
+                    <div key={m.month}>
+                      <div
+                        className={`w-full grid grid-cols-3 items-center text-sm rounded-lg px-2 py-1.5 transition-colors ${
+                          isActive || isOpen
+                            ? "bg-(--accent)/10 ring-1 ring-(--accent)/30"
+                            : "hover:bg-(--surface)"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 text-left">
+                          <button
+                            type="button"
+                            onClick={() => setOpenMonth(isOpen ? null : m.month)}
+                            disabled={!canExpand}
+                            className={`shrink-0 ${canExpand ? "text-(--text-muted) hover:text-(--accent)" : "opacity-0"}`}
+                            aria-label="Show projects"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={`transition-transform ${isOpen ? "rotate-90" : ""}`}
+                            >
+                              <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMonth(isActive ? null : m.month)}
+                            className="text-(--text-secondary) hover:text-(--accent) truncate"
+                          >
+                            {monthLabel(m.month)}
+                          </button>
+                        </span>
+                        <span className="text-right font-mono text-emerald-600 dark:text-emerald-400">
+                          {m.amount > 0 ? money(m.amount) : "—"}
+                        </span>
+                        <span className="text-right font-mono text-(--text-primary)">
+                          {pend > 0 ? money(pend) : "—"}
+                        </span>
+                      </div>
+                      {isOpen && canExpand && (
+                        <div className="ml-4 mt-1 mb-2 border-l border-(--border) pl-2 space-y-2">
+                          {pays.length > 0 && (
+                            <div>
+                              <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                                Paid ({pays.length})
+                              </p>
+                              <div className="space-y-0.5">
+                                {pays.map((p) => (
+                                  <PaymentSummary key={p.id} p={p} />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {rows.length > 0 && (
+                            <div>
+                              <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-widest text-(--text-muted)">
+                                Still owed ({rows.length})
+                              </p>
+                              <div className="space-y-0.5">
+                                {rows.map((r) => (
+                                  <ReceivableSummary key={r.quoteId} r={r} />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -234,25 +364,75 @@ export function CollectionsView({
                 <h2 className="text-sm font-semibold text-(--text-primary) mb-4">
                   Outstanding by commercial
                 </h2>
-                <div className="space-y-3">
+                <div className="space-y-1">
                   {byCommercial.map((c) => {
                     const max = Math.max(1, ...byCommercial.map((x) => x.amount));
+                    const isOpen = openCommercial === c.name;
+                    const rows = receivablesFor((r) => r.assignedTo === c.name);
+                    const pays = paymentsFor((p) => p.assignedTo === c.name);
                     return (
                       <div key={c.name}>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="text-(--text-secondary) font-medium">
-                            {c.name}
-                          </span>
-                          <span className="text-(--text-muted)">
-                            {c.count} · {money(c.amount)}
-                          </span>
-                        </div>
-                        <div className="h-2.5 rounded-full bg-(--surface) overflow-hidden">
-                          <div
-                            className="h-full bg-(--accent) rounded-full"
-                            style={{ width: `${(c.amount / max) * 100}%` }}
-                          />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOpenCommercial(isOpen ? null : c.name)}
+                          className={`w-full text-left rounded-lg px-2 py-1.5 transition-colors ${
+                            isOpen ? "bg-(--accent)/10 ring-1 ring-(--accent)/30" : "hover:bg-(--surface)"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="flex items-center gap-1.5 text-(--text-secondary) font-medium">
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className={`shrink-0 text-(--text-muted) transition-transform ${isOpen ? "rotate-90" : ""}`}
+                              >
+                                <polyline points="9 18 15 12 9 6" />
+                              </svg>
+                              {c.name}
+                            </span>
+                            <span className="text-(--text-muted)">
+                              {c.count} · {money(c.amount)}
+                            </span>
+                          </div>
+                          <div className="h-2.5 rounded-full bg-(--surface) overflow-hidden">
+                            <div
+                              className="h-full bg-(--accent) rounded-full"
+                              style={{ width: `${(c.amount / max) * 100}%` }}
+                            />
+                          </div>
+                        </button>
+                        {isOpen && (
+                          <div className="ml-4 mt-1 mb-2 border-l border-(--border) pl-2 space-y-2">
+                            <div>
+                              <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-widest text-(--text-muted)">
+                                Still owed ({rows.length})
+                              </p>
+                              <div className="space-y-0.5">
+                                {rows.map((r) => (
+                                  <ReceivableSummary key={r.quoteId} r={r} />
+                                ))}
+                              </div>
+                            </div>
+                            {pays.length > 0 && (
+                              <div>
+                                <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                                  Paid ({pays.length})
+                                </p>
+                                <div className="space-y-0.5">
+                                  {pays.map((p) => (
+                                    <PaymentSummary key={p.id} p={p} />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -310,7 +490,7 @@ export function CollectionsView({
                       >
                         <td className="px-5 py-3">
                           <Link
-                            href={`/clients/${r.clientId}`}
+                            href={`/clients/${r.clientId}#project-${r.projectId}`}
                             className="font-medium text-(--text-primary) hover:text-(--accent)"
                           >
                             {r.clientName}
@@ -352,7 +532,7 @@ export function CollectionsView({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <Link
-                            href={`/clients/${r.clientId}`}
+                            href={`/clients/${r.clientId}#project-${r.projectId}`}
                             className="font-medium text-(--text-primary)"
                           >
                             {r.clientName}
