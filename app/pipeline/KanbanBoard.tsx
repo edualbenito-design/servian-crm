@@ -26,6 +26,8 @@ export type CardEntry = {
   clientName: string;
   propertyType: PropertyType;
   assignedTo: Salesperson;
+  // Open deal (stage 1–7) with no pending follow-up → nothing scheduled next.
+  needsNextStep: boolean;
 };
 
 export type BoardColumns = Record<string, CardEntry[]>;
@@ -251,6 +253,17 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                                 <p className="text-[11px] font-medium text-(--text-muted) leading-tight">
                                   {card.clientName}
                                 </p>
+                                {card.needsNextStep && (
+                                  <span
+                                    title="No follow-up scheduled — add a next step"
+                                    className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap"
+                                  >
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                                    </svg>
+                                    No next step
+                                  </span>
+                                )}
                               </div>
 
                               {/* Project name */}

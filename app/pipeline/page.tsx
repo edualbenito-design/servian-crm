@@ -17,6 +17,9 @@ function buildInitialColumns(data: Client[]): BoardColumns {
         clientName: client.name,
         propertyType: client.propertyType,
         assignedTo: client.assignedTo,
+        // Open deal with nothing scheduled next → easy to let it go cold.
+        needsNextStep:
+          project.pipelineStage < 8 && (project.followUps?.length ?? 0) === 0,
       });
     }
   }
@@ -45,6 +48,14 @@ export default async function PipelinePage() {
     (sum, c) => sum + c.projects.reduce((s, p) => s + p.budget, 0),
     0
   );
+  const needsNextStep = clients.reduce(
+    (n, c) =>
+      n +
+      c.projects.filter(
+        (p) => p.pipelineStage < 8 && (p.followUps?.length ?? 0) === 0
+      ).length,
+    0
+  );
 
   return (
     <div className="flex flex-col">
@@ -58,6 +69,12 @@ export default async function PipelinePage() {
             <p className="mt-1 text-sm text-(--text-secondary)">
               {totalProjects} projects &middot;{" "}
               {formatCurrency(totalPipelineValue)} total pipeline value
+              {needsNextStep > 0 && (
+                <span className="text-amber-500 font-medium">
+                  {" "}
+                  &middot; {needsNextStep} need a next step
+                </span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs text-(--text-muted)">
