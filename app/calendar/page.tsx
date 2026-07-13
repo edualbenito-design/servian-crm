@@ -1,5 +1,6 @@
 import { getFollowUpAgenda, getAdvanceAlerts } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
+import { icalFeedUrl } from "@/lib/ical";
 import { CalendarView } from "./CalendarView";
 
 export default async function CalendarPage() {
@@ -40,6 +41,8 @@ export default async function CalendarPage() {
       doneNote: f.doneNote ?? "",
     }));
 
+  const feedUrl = profile?.name ? icalFeedUrl(profile.name) : "";
+
   return (
     <CalendarView
       pending={pending}
@@ -47,6 +50,7 @@ export default async function CalendarPage() {
       alerts={alerts}
       isManager={profile?.isManager ?? false}
       currentUserName={profile?.name ?? ""}
+      feedUrl={feedUrl}
     />
   );
 }

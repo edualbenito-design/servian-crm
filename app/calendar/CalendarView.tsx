@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { completeFollowUp, rescheduleFollowUp } from "@/app/actions";
 import { ADVANCE_PCT } from "@/lib/data";
+import { IcalSubscribe } from "./IcalSubscribe";
 
 type Alert = {
   projectId: string;
@@ -115,12 +116,14 @@ export function CalendarView({
   alerts,
   isManager,
   currentUserName,
+  feedUrl,
 }: {
   pending: PendingItem[];
   done: DoneItem[];
   alerts: Alert[];
   isManager: boolean;
   currentUserName: string;
+  feedUrl: string;
 }) {
   const today = todayYMD();
   const [pending, setPending] = useState<PendingItem[]>(initialPending);
@@ -310,6 +313,9 @@ export function CalendarView({
           </button>
         </div>
       </div>
+
+      {/* Subscribe your phone to this feed */}
+      {feedUrl && <IcalSubscribe url={feedUrl} />}
 
       {/* Advance-payment alerts */}
       {alerts.length > 0 && (
