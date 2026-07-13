@@ -1,6 +1,23 @@
 # Servian CRM — Estado del proyecto
 
-Última actualización: 2026-07-07
+Última actualización: 2026-07-13
+
+## 🆕 Sesión 2026-07-13 (todo en producción, sin SQL nuevo)
+- **Collections — drill-down:** cada mes y cada comercial se despliega mostrando "Paid"
+  (quién pagó, qué proyecto, importe, método) y "Still owed", con enlace directo al proyecto
+  (ancla `#project-<id>` en la ficha del cliente, se abre solo al llegar).
+- **Collections — filtro por mes multi-selección:** barra de chips (12 meses rodantes), botones
+  "año" y "All", con totales agregados. Las KPIs y el desglose por comercial reflejan la selección
+  (global por defecto). Datos ampliados de 6 a 12 meses.
+- **Módulo 4 — Valor de vida + reactivación:** nueva página `/reactivation` (nav "Value"): total
+  gastado por cliente, nº proyectos, última actividad, clientes dormidos (>90d); filtros
+  All/Active/To reactivate + orden. `getClientValues` en lib/db.ts.
+- **Plantillas de WhatsApp:** menú en la ficha del cliente con mensajes pre-escritos
+  (presupuesto, recordatorio, anticipo 50%, seguimiento, gracias, reactivación). `lib/whatsapp.ts`
+  + `app/components/WhatsAppMenu.tsx`.
+- **Feed iCal por comercial:** URL secreta read-only (`/api/ical?u=<nombre>&t=<token>` HMAC) con sus
+  follow-ups; botón "Subscribe on your phone" en el calendario. `lib/ical.ts`.
+
 
 ## ✅ Hecho
 - CRM: lista de clientes con stats, ficha de cliente, edición
