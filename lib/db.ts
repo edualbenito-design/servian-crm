@@ -715,6 +715,111 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
   return { receivables, collectedThisMonth, collectedByMonth, collectedPayments };
 }
 
+// ── Client lifetime value & reactivation ────────────────────────────────────────
+// Per-client rollup: how much they've paid over time, how many projects, and how
+// long since any activity — so managers/sales can spot the best clients and the
+// dormant ones worth re-engaging. Built with a few bulk queries (not per client).
+
+export interface ClientValue {
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  assignedTo: string;
+  totalSpent: number; // sum of all payments ever, across projects
+  projectCount: number; // non-archived projects
+  completedCount: number;
+  activeCount: number; // active or on-hold
+  lastPaymentAt?: string; // YYYY-MM-DD
+  lastActivityAt?: string; // most recent signal of any kind
+  daysSinceActivity: number; // days since lastActivityAt (large if never)
+}
+
+export async function getClientValues(assignedTo?: string): Promise<ClientValue[]> {
+  const db = serverClient();
+
+  let cq = db
+    .from("clients")
+    .select(
+      "id, name, phone, assigned_to, created_at, deleted_at, projects(id, status, end_date, deleted_at)"
+    );
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw } = await cq;
+  if (!clientsRaw) return [];
+
+  type Row = {
+    id: string;
+    name: string;
+    phone: string;
+    assigned_to: string;
+    created_at: string | null;
+    deleted_at: string | null;
+    projects: { id: string; status: string | null; end_date: string | null; deleted_at: string | null }[] | null;
+  };
+  const clients = (clientsRaw as Row[]).filter((c) => !c.deleted_at);
+  const inScope = new Set(clients.map((c) => c.id));
+
+  // Payments → total spent + last payment date per client (fail soft).
+  const { data: paysRaw } = await db.from("payments").select("client_id, amount, paid_on");
+  const spent = new Map<string, number>();
+  const lastPay = new Map<string, string>();
+  for (const p of (paysRaw as { client_id: string | null; amount: number; paid_on: string | null }[] | null) ?? []) {
+    if (!p.client_id || !inScope.has(p.client_id)) continue;
+    spent.set(p.client_id, (spent.get(p.client_id) ?? 0) + (Number(p.amount) || 0));
+    if (p.paid_on) {
+      const prev = lastPay.get(p.client_id);
+      if (!prev || p.paid_on > prev) lastPay.set(p.client_id, p.paid_on);
+    }
+  }
+
+  // Activities → last activity date per client (fail soft).
+  const { data: actsRaw } = await db.from("activities").select("client_id, created_at");
+  const lastAct = new Map<string, string>();
+  for (const a of (actsRaw as { client_id: string; created_at: string }[] | null) ?? []) {
+    if (!inScope.has(a.client_id)) continue;
+    const d = a.created_at?.slice(0, 10);
+    if (!d) continue;
+    const prev = lastAct.get(a.client_id);
+    if (!prev || d > prev) lastAct.set(a.client_id, d);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const out: ClientValue[] = clients.map((c) => {
+    const projects = (c.projects ?? []).filter((p) => !p.deleted_at);
+    const completedCount = projects.filter((p) => p.status === "completed").length;
+    const activeCount = projects.filter((p) => p.status === "active" || p.status === "on-hold").length;
+    // Most recent signal: last payment, last activity, latest project end, created.
+    const signals = [
+      lastPay.get(c.id),
+      lastAct.get(c.id),
+      ...projects.map((p) => p.end_date ?? undefined),
+      c.created_at?.slice(0, 10),
+    ].filter((s): s is string => Boolean(s));
+    const lastActivityAt = signals.length ? signals.sort().at(-1) : undefined;
+    const daysSinceActivity = lastActivityAt
+      ? Math.max(0, Math.round((today.getTime() - new Date(lastActivityAt + "T00:00:00").getTime()) / 86400000))
+      : 99999;
+    return {
+      clientId: c.id,
+      clientName: c.name,
+      clientPhone: c.phone,
+      assignedTo: c.assigned_to,
+      totalSpent: spent.get(c.id) ?? 0,
+      projectCount: projects.length,
+      completedCount,
+      activeCount,
+      lastPaymentAt: lastPay.get(c.id),
+      lastActivityAt,
+      daysSinceActivity,
+    };
+  });
+
+  // Most valuable first (that's the lifetime-value view).
+  out.sort((a, b) => b.totalSpent - a.totalSpent);
+  return out;
+}
+
 export async function getQuote(id: string): Promise<Quote | null> {
   const db = serverClient();
   const { data, error } = await db

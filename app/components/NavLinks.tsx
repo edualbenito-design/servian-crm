@@ -9,6 +9,7 @@ const baseLinks = [
   { href: "/pipeline", label: "Pipeline" },
   { href: "/calendar", label: "Calendar" },
   { href: "/collections", label: "Collections" },
+  { href: "/reactivation", label: "Value" },
 ];
 
 const managerLinks = [
