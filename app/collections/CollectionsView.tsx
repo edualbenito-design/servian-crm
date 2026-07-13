@@ -194,40 +194,41 @@ export function CollectionsView({
   const selectYear = (year: string) =>
     setMonths(new Set(monthOptions.filter((m) => m.startsWith(year))));
 
-  const summary = collectionsSummary(receivables);
-  const byCommercial = outstandingByCommercial(receivables);
+  // Scope everything by the selected months (empty selection = all = global).
+  const inMonths = (key: string) => months.size === 0 || months.has(key);
+  const scopedReceivables = receivables.filter((r) => inMonths(r.sinceDate.slice(0, 7)));
+  const scopedPayments = collectedPayments.filter((p) => inMonths(p.paidOn.slice(0, 7)));
 
+  // KPIs & commercial breakdown follow the month selection (global by default).
+  const summary = collectionsSummary(scopedReceivables);
+  const byCommercial = outstandingByCommercial(scopedReceivables);
+  const selectedCollected = collectedByMonth
+    .filter((m) => inMonths(m.month))
+    .reduce((s, m) => s + m.amount, 0);
+
+  // Drill-down helpers over the FULL sets — the month table can expand any month,
+  // even one that isn't in the current selection.
   const receivablesFor = (predicate: (r: Receivable) => boolean) =>
     receivables.filter(predicate);
   const paymentsFor = (predicate: (p: CollectedPayment) => boolean) =>
     collectedPayments.filter(predicate);
 
-  // Pending per month (by the receivable's invoice/issue month).
+  // Pending per month uses the FULL set — this table is the month picker itself.
   const pendingByMonth = new Map<string, number>();
   for (const r of receivables) {
     const m = r.sinceDate.slice(0, 7);
     if (m) pendingByMonth.set(m, (pendingByMonth.get(m) ?? 0) + r.balance);
   }
 
-  const filtered = receivables.filter((r) => {
+  const filtered = scopedReceivables.filter((r) => {
     if (filter === "overdue" && r.ageDays <= OVERDUE_DAYS) return false;
     if (filter === "current" && r.ageDays > OVERDUE_DAYS) return false;
-    if (months.size > 0 && !months.has(r.sinceDate.slice(0, 7))) return false;
     return true;
   });
 
   function toggleFilter(f: Filter) {
     setFilter((prev) => (prev === f ? "all" : f));
   }
-
-  // Aggregate totals for the currently selected months (all when none picked).
-  const inMonths = (key: string) => months.size === 0 || months.has(key);
-  const selectedOutstanding = receivables
-    .filter((r) => inMonths(r.sinceDate.slice(0, 7)))
-    .reduce((s, r) => s + r.balance, 0);
-  const selectedCollected = collectedByMonth
-    .filter((m) => inMonths(m.month))
-    .reduce((s, m) => s + m.amount, 0);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
@@ -262,9 +263,17 @@ export function CollectionsView({
           onClick={() => toggleFilter("overdue")}
         />
         <Kpi
-          label="Collected this month · AED"
-          value={money(collectedThisMonth)}
-          tone={collectedThisMonth > 0 ? "good" : "default"}
+          label={
+            months.size === 0
+              ? "Collected this month · AED"
+              : `Collected · ${months.size}mo · AED`
+          }
+          value={money(months.size === 0 ? collectedThisMonth : selectedCollected)}
+          tone={
+            (months.size === 0 ? collectedThisMonth : selectedCollected) > 0
+              ? "good"
+              : "default"
+          }
         />
       </div>
 
@@ -332,7 +341,7 @@ export function CollectionsView({
               </span>
               {" · "}
               <span className="text-(--text-primary) font-medium">
-                {money(selectedOutstanding)} outstanding
+                {money(summary.totalOutstanding)} outstanding
               </span>
             </p>
           </div>
@@ -457,8 +466,8 @@ export function CollectionsView({
                   {byCommercial.map((c) => {
                     const max = Math.max(1, ...byCommercial.map((x) => x.amount));
                     const isOpen = openCommercial === c.name;
-                    const rows = receivablesFor((r) => r.assignedTo === c.name);
-                    const pays = paymentsFor((p) => p.assignedTo === c.name);
+                    const rows = scopedReceivables.filter((r) => r.assignedTo === c.name);
+                    const pays = scopedPayments.filter((p) => p.assignedTo === c.name);
                     return (
                       <div key={c.name}>
                         <button
