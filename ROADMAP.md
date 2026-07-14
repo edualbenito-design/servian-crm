@@ -58,7 +58,8 @@
   de listas/pipeline/analytics pero sigue en la DB. Aviso visible en lista de clientes y ficha.
 - [x] Cuentas reales de **Alfie** (alfie.infante101786@gmail.com) y **Joana**
   (joanamarieconceja@gmail.com) — rol sales, full_name = "Alfie"/"Joana" (ven su nombre, no el correo)
-- [ ] ⏸️ (BLOQUEADO: faltan sus emails) Crear cuentas de Elsayed y Faizan (rol sales, full_name exacto)
+- [x] **Cuentas de Elsayed y Faizan creadas** (2026-07-14): Elsayed=alsayedmmdh@gmail.com,
+  Faizan=faizan1989.ahmed@gmail.com, rol sales, full_name "Elsayed"/"Faizan", login verificado.
 - [ ] ⏸️ ON HOLD (el usuario debe hablar con su agencia para integrar con sus sistemas) — Captación RRSS:
   Fase 1 campo "Campaña" + vista/filtro "Unassigned" + botón "Asignar a [comercial]" · Fase 2 página
   pública de intake (link IG) → pool "Unassigned" · Fase 3 reparto round-robin. Ver HANDOFF §10.6.
