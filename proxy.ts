@@ -50,8 +50,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes except static assets.
+  // Run on all routes except static assets AND API routes. API routes
+  // (cron, iCal feed) authenticate themselves via secret/token, and must be
+  // reachable without a logged-in session — otherwise this proxy would
+  // redirect them to /login.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
