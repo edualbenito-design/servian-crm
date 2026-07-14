@@ -1,4 +1,4 @@
-import { getClients } from "@/lib/db";
+import { getClients, getQuoteStats } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import {
   computeKpis,
@@ -7,8 +7,10 @@ import {
   pipelineFunnel,
   performanceByCommercial,
   durationBySize,
+  conversionFunnel,
 } from "@/lib/analytics";
 import { SalesDashboard } from "./SalesDashboard";
+import { ConversionCard } from "./ConversionCard";
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -62,10 +64,19 @@ export default async function DashboardPage() {
   // Commercials get their own personal dashboard (only their data).
   if (profile && !profile.isManager) {
     const myClients = await getClients(profile.name);
-    return <SalesDashboard clients={myClients} name={profile.name} />;
+    const myQuoteStats = await getQuoteStats(profile.name);
+    return (
+      <SalesDashboard
+        clients={myClients}
+        name={profile.name}
+        quoteStats={myQuoteStats}
+      />
+    );
   }
 
   const clients = await getClients();
+  const quoteStats = await getQuoteStats();
+  const conversion = conversionFunnel(clients);
 
   const kpis = computeKpis(clients);
   const months = leadsByMonth(clients, 6);
@@ -197,6 +208,11 @@ export default async function DashboardPage() {
           ))}
         </div>
       </Card>
+
+      {/* Conversion */}
+      <div className="mt-6">
+        <ConversionCard conversion={conversion} quoteStats={quoteStats} />
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
         {/* Performance by commercial */}

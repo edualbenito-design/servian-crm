@@ -820,6 +820,66 @@ export async function getClientValues(assignedTo?: string): Promise<ClientValue[
   return out;
 }
 
+// ── Quote conversion stats ──────────────────────────────────────────────────────
+// Real acceptance rate from quote statuses, scoped by salesperson.
+
+export interface QuoteStats {
+  draft: number;
+  sent: number; // sent, awaiting a decision
+  accepted: number;
+  rejected: number;
+  decided: number; // accepted + rejected
+  acceptanceRate: number; // accepted / decided (%)
+}
+
+export async function getQuoteStats(assignedTo?: string): Promise<QuoteStats> {
+  const empty: QuoteStats = {
+    draft: 0,
+    sent: 0,
+    accepted: 0,
+    rejected: 0,
+    decided: 0,
+    acceptanceRate: 0,
+  };
+  const db = serverClient();
+
+  // Which clients are in scope (managers → all; sales → their own).
+  let cq = db.from("clients").select("id, assigned_to, deleted_at");
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: cs } = await cq;
+  if (!cs) return empty;
+  const ids = new Set(
+    (cs as { id: string; deleted_at: string | null }[])
+      .filter((c) => !c.deleted_at)
+      .map((c) => c.id)
+  );
+  if (ids.size === 0) return empty;
+
+  const { data: qs } = await db.from("quotes").select("status, client_id");
+  if (!qs) return empty;
+
+  let draft = 0,
+    sent = 0,
+    accepted = 0,
+    rejected = 0;
+  for (const q of qs as { status: string; client_id: string }[]) {
+    if (!ids.has(q.client_id)) continue;
+    if (q.status === "draft") draft++;
+    else if (q.status === "sent") sent++;
+    else if (q.status === "accepted") accepted++;
+    else if (q.status === "rejected") rejected++;
+  }
+  const decided = accepted + rejected;
+  return {
+    draft,
+    sent,
+    accepted,
+    rejected,
+    decided,
+    acceptanceRate: decided > 0 ? Math.round((accepted / decided) * 100) : 0,
+  };
+}
+
 export async function getQuote(id: string): Promise<Quote | null> {
   const db = serverClient();
   const { data, error } = await db

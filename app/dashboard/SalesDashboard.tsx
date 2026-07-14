@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Client } from "@/lib/data";
 import { followUpState, PIPELINE_STAGES } from "@/lib/data";
-import { pipelineFunnel } from "@/lib/analytics";
+import { pipelineFunnel, conversionFunnel } from "@/lib/analytics";
+import type { QuoteStats } from "@/lib/db";
+import { ConversionCard } from "./ConversionCard";
 
 function num(n: number) {
   return new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
@@ -31,9 +33,11 @@ function Kpi({ label, value }: { label: string; value: string }) {
 export function SalesDashboard({
   clients,
   name,
+  quoteStats,
 }: {
   clients: Client[];
   name: string;
+  quoteStats: QuoteStats;
 }) {
   const projects = clients.flatMap((c) => c.projects);
   const activeProjects = projects.filter((p) => p.status === "active").length;
@@ -57,6 +61,7 @@ export function SalesDashboard({
 
   const funnel = pipelineFunnel(clients);
   const maxFunnel = Math.max(1, ...funnel.map((f) => f.count));
+  const conversion = conversionFunnel(clients);
 
   const dueCount = overdue.length + today.length;
 
@@ -190,6 +195,11 @@ export function SalesDashboard({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Conversion */}
+      <div className="mt-6">
+        <ConversionCard conversion={conversion} quoteStats={quoteStats} />
       </div>
     </div>
   );

@@ -52,6 +52,40 @@ export function computeKpis(clients: Client[]): Kpis {
   };
 }
 
+// ── Deal conversion (based on how far each project got in the pipeline) ─────────
+// Uses the project's current stage as "furthest reached": Quoted = a quote was
+// sent (stage ≥ 4), Confirmed = won the job (stage ≥ 7), Completed = finished.
+
+export interface Conversion {
+  total: number;
+  quoted: number; // reached "Quote 1 Sent" or beyond
+  confirmed: number; // reached "Project Confirmed" or beyond
+  completed: number;
+  quotedRate: number; // quoted / total
+  winRate: number; // confirmed / quoted (of quoted deals, how many were won)
+  closeRate: number; // confirmed / total (overall lead → won)
+}
+
+export function conversionFunnel(clients: Client[]): Conversion {
+  const projects = allProjects(clients).map((x) => x.project);
+  const total = projects.length;
+  const quoted = projects.filter((p) => p.pipelineStage >= 4).length;
+  const confirmed = projects.filter((p) => p.pipelineStage >= 7).length;
+  const completed = projects.filter(
+    (p) => p.status === "completed" || p.pipelineStage === 8
+  ).length;
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  return {
+    total,
+    quoted,
+    confirmed,
+    completed,
+    quotedRate: pct(quoted, total),
+    winRate: pct(confirmed, quoted),
+    closeRate: pct(confirmed, total),
+  };
+}
+
 // ── Leads captured per month (last N months, oldest→newest) ────────────────────
 
 export interface MonthBar {
