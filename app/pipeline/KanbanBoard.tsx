@@ -53,14 +53,15 @@ const propertyTypeColor: Record<PropertyType, string> = {
 };
 
 const stageTopBorder: Record<PipelineStage, string> = {
-  1: "border-t-zinc-600",
-  2: "border-t-sky-700",
-  3: "border-t-sky-500",
+  1: "border-t-zinc-500",
+  2: "border-t-sky-600",
+  3: "border-t-sky-400",
   4: "border-t-blue-500",
-  5: "border-t-amber-600",
-  6: "border-t-amber-400",
-  7: "border-t-emerald-500",
-  8: "border-t-zinc-500",
+  5: "border-t-amber-500",
+  6: "border-t-emerald-500",
+  7: "border-t-emerald-600",
+  8: "border-t-red-500",
+  9: "border-t-zinc-500",
 };
 
 const stageHeaderColor: Record<PipelineStage, string> = {
@@ -69,9 +70,10 @@ const stageHeaderColor: Record<PipelineStage, string> = {
   3: "text-sky-500 dark:text-sky-300",
   4: "text-blue-600 dark:text-blue-400",
   5: "text-amber-600 dark:text-amber-500",
-  6: "text-amber-500 dark:text-amber-400",
-  7: "text-emerald-600 dark:text-emerald-400",
-  8: "text-zinc-600 dark:text-zinc-400",
+  6: "text-emerald-600 dark:text-emerald-400",
+  7: "text-emerald-700 dark:text-emerald-300",
+  8: "text-red-600 dark:text-red-400",
+  9: "text-zinc-500 dark:text-zinc-400",
 };
 
 const stageBadgeColor: Record<PipelineStage, string> = {
@@ -80,9 +82,10 @@ const stageBadgeColor: Record<PipelineStage, string> = {
   3: "bg-sky-100 text-sky-600 dark:bg-sky-900/60 dark:text-sky-300",
   4: "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-400",
   5: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-500",
-  6: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
-  7: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
-  8: "bg-zinc-200 text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-500",
+  6: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+  7: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300",
+  8: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+  9: "bg-zinc-200 text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-500",
 };
 
 const salesAvatarColor: Record<Salesperson, string> = {

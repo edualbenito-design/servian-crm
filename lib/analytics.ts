@@ -1,5 +1,14 @@
 import type { Client, Project, LeadSource, PipelineStage } from "./data";
-import { PIPELINE_STAGES, followUpState } from "./data";
+import {
+  PIPELINE_STAGES,
+  followUpState,
+  isWonStage,
+  isDeadStage,
+  isCompletedStage,
+  isOpenStage,
+  LOST_STAGE,
+  GHOSTING_STAGE,
+} from "./data";
 
 export function monthKey(dateStr?: string): string {
   return dateStr ? dateStr.slice(0, 7) : "";
@@ -36,14 +45,20 @@ export function computeKpis(clients: Client[]): Kpis {
   return {
     totalClients: clients.length,
     leadsThisMonth: clients.filter((c) => clientMonth(c) === thisMonth).length,
-    activeProjects: projects.filter((p) => p.status === "active").length,
-    completedProjects: projects.filter((p) => p.status === "completed").length,
+    // Active = live deals (open funnel + on site); Completed = finished.
+    activeProjects: projects.filter(
+      (p) => !isDeadStage(p.pipelineStage) && !isCompletedStage(p.pipelineStage)
+    ).length,
+    completedProjects: projects.filter((p) => isCompletedStage(p.pipelineStage))
+      .length,
     approvedProjects: projects.filter((p) => p.approved).length,
+    // Pipeline value = deals still in the funnel (not yet won, not dead).
     pipelineValue: projects
-      .filter((p) => p.status !== "completed")
+      .filter((p) => isOpenStage(p.pipelineStage))
       .reduce((s, p) => s + p.budget, 0),
+    // Won value = deals won (on site + completed).
     wonValue: projects
-      .filter((p) => p.status === "completed")
+      .filter((p) => isWonStage(p.pipelineStage))
       .reduce((s, p) => s + p.budget, 0),
     followUpsDue: clients.filter((c) => {
       const s = followUpState(c.nextFollowUp);
@@ -58,31 +73,32 @@ export function computeKpis(clients: Client[]): Kpis {
 
 export interface Conversion {
   total: number;
-  quoted: number; // reached "Quote 1 Sent" or beyond
-  confirmed: number; // reached "Project Confirmed" or beyond
-  completed: number;
-  quotedRate: number; // quoted / total
-  winRate: number; // confirmed / quoted (of quoted deals, how many were won)
-  closeRate: number; // confirmed / total (overall lead → won)
+  open: number; // still in the funnel (stages 1–5)
+  won: number; // won (on site + completed)
+  lost: number;
+  ghosting: number;
+  decided: number; // won + lost + ghosting (deals that reached an outcome)
+  winRate: number; // won / decided
 }
 
 export function conversionFunnel(clients: Client[]): Conversion {
   const projects = allProjects(clients).map((x) => x.project);
   const total = projects.length;
-  const quoted = projects.filter((p) => p.pipelineStage >= 4).length;
-  const confirmed = projects.filter((p) => p.pipelineStage >= 7).length;
-  const completed = projects.filter(
-    (p) => p.status === "completed" || p.pipelineStage === 8
+  const open = projects.filter((p) => isOpenStage(p.pipelineStage)).length;
+  const won = projects.filter((p) => isWonStage(p.pipelineStage)).length;
+  const lost = projects.filter((p) => p.pipelineStage === LOST_STAGE).length;
+  const ghosting = projects.filter(
+    (p) => p.pipelineStage === GHOSTING_STAGE
   ).length;
-  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  const decided = won + lost + ghosting;
   return {
     total,
-    quoted,
-    confirmed,
-    completed,
-    quotedRate: pct(quoted, total),
-    winRate: pct(confirmed, quoted),
-    closeRate: pct(confirmed, total),
+    open,
+    won,
+    lost,
+    ghosting,
+    decided,
+    winRate: decided > 0 ? Math.round((won / decided) * 100) : 0,
   };
 }
 
@@ -129,7 +145,7 @@ export interface StageBar {
 export function pipelineFunnel(clients: Client[]): StageBar[] {
   const projects = allProjects(clients).map((x) => x.project);
   const bars: StageBar[] = [];
-  for (let s = 1 as PipelineStage; s <= 8; s = (s + 1) as PipelineStage) {
+  for (let s = 1 as PipelineStage; s <= 9; s = (s + 1) as PipelineStage) {
     const inStage = projects.filter((p) => p.pipelineStage === s);
     bars.push({
       stage: s,

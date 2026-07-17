@@ -1,7 +1,7 @@
 export type PropertyType = "villa" | "apartment" | "office" | "other";
 export type LeadSource = "referral" | "instagram" | "other";
 export type ProjectStatus = "active" | "completed" | "on-hold";
-export type PipelineStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type PipelineStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 // Anyone who can manage or capture a client: 4 commercials + 2 managers.
 // Unassigned = generic pool (used for assignedTo only).
@@ -366,12 +366,36 @@ export interface Client {
 }
 
 export const PIPELINE_STAGES: Record<PipelineStage, string> = {
-  1: "Lead Received",
-  2: "First Contact",
-  3: "Site Visit 1",
-  4: "Quote 1 Sent",
-  5: "Site Visit 2",
-  6: "Quote 2 Sent",
-  7: "Project Confirmed",
-  8: "Project Completed",
+  1: "New Lead",
+  2: "Contacted",
+  3: "Site Visit",
+  4: "Quoted",
+  5: "Negotiation",
+  6: "Won — On site",
+  7: "Completed",
+  8: "Lost",
+  9: "Ghosting",
 };
+
+// ── Stage semantics ─────────────────────────────────────────────────────────────
+// Stages 1–5 = live funnel · 6 Won (on site) · 7 Completed · 8 Lost · 9 Ghosting.
+// Won = the deal was won (on site or completed). Dead = lost or ghosting.
+// Deriving outcomes from the STAGE keeps the board the single source of truth.
+export const ONSITE_STAGE: PipelineStage = 6;
+export const COMPLETED_STAGE: PipelineStage = 7;
+export const LOST_STAGE: PipelineStage = 8;
+export const GHOSTING_STAGE: PipelineStage = 9;
+
+export function isWonStage(s: PipelineStage): boolean {
+  return s === ONSITE_STAGE || s === COMPLETED_STAGE;
+}
+export function isDeadStage(s: PipelineStage): boolean {
+  return s === LOST_STAGE || s === GHOSTING_STAGE;
+}
+export function isCompletedStage(s: PipelineStage): boolean {
+  return s === COMPLETED_STAGE;
+}
+// Live funnel: still being worked (New Lead → Negotiation).
+export function isOpenStage(s: PipelineStage): boolean {
+  return s >= 1 && s <= 5;
+}

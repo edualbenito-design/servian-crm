@@ -2,10 +2,11 @@ import { getClients } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { KanbanBoard, type BoardColumns } from "./KanbanBoard";
 import type { Client } from "@/lib/data";
+import { isOpenStage } from "@/lib/data";
 
 function buildInitialColumns(data: Client[]): BoardColumns {
   const columns: BoardColumns = {};
-  for (let s = 1; s <= 8; s++) columns[String(s)] = [];
+  for (let s = 1; s <= 9; s++) columns[String(s)] = [];
 
   for (const client of data) {
     for (const project of client.projects) {
@@ -17,9 +18,10 @@ function buildInitialColumns(data: Client[]): BoardColumns {
         clientName: client.name,
         propertyType: client.propertyType,
         assignedTo: client.assignedTo,
-        // Open deal with nothing scheduled next → easy to let it go cold.
+        // Live funnel deal with nothing scheduled next → easy to let it go cold.
         needsNextStep:
-          project.pipelineStage < 8 && (project.followUps?.length ?? 0) === 0,
+          isOpenStage(project.pipelineStage) &&
+          (project.followUps?.length ?? 0) === 0,
       });
     }
   }
@@ -52,7 +54,7 @@ export default async function PipelinePage() {
     (n, c) =>
       n +
       c.projects.filter(
-        (p) => p.pipelineStage < 8 && (p.followUps?.length ?? 0) === 0
+        (p) => isOpenStage(p.pipelineStage) && (p.followUps?.length ?? 0) === 0
       ).length,
     0
   );
@@ -77,22 +79,22 @@ export default async function PipelinePage() {
               )}
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs text-(--text-muted)">
+          <div className="flex items-center gap-3 text-xs text-(--text-muted) flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-sky-500" />
-              Prospecting
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              Quoting
+              In funnel
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Confirmed
+              Won
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              Lost
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-zinc-500" />
-              Completed
+              Ghosting
             </span>
           </div>
         </div>

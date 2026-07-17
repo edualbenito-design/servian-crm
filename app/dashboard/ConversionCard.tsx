@@ -10,11 +10,11 @@ export function ConversionCard({
   conversion: Conversion;
   quoteStats: QuoteStats;
 }) {
-  const steps = [
-    { label: "All deals", count: conversion.total, rate: null as number | null },
-    { label: "Quoted", count: conversion.quoted, rate: conversion.quotedRate },
-    { label: "Confirmed", count: conversion.confirmed, rate: conversion.closeRate },
-    { label: "Completed", count: conversion.completed, rate: null },
+  const rows = [
+    { label: "Open", count: conversion.open, color: "bg-(--accent)/70" },
+    { label: "Won", count: conversion.won, color: "bg-emerald-500" },
+    { label: "Lost", count: conversion.lost, color: "bg-red-500" },
+    { label: "Ghosting", count: conversion.ghosting, color: "bg-zinc-400" },
   ];
   const max = Math.max(1, conversion.total);
 
@@ -24,47 +24,34 @@ export function ConversionCard({
         Conversion
       </h2>
 
-      {/* Funnel */}
+      {/* Outcomes */}
       <div className="space-y-2">
-        {steps.map((s) => (
-          <div key={s.label} className="flex items-center gap-3">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-3">
             <span className="w-20 shrink-0 text-xs text-(--text-secondary)">
-              {s.label}
+              {r.label}
             </span>
             <div className="flex-1 h-5 rounded bg-(--surface) overflow-hidden">
               <div
-                className="h-full bg-(--accent)/70 rounded"
-                style={{ width: `${(s.count / max) * 100}%` }}
+                className={`h-full rounded ${r.color}`}
+                style={{ width: `${(r.count / max) * 100}%` }}
               />
             </div>
             <span className="w-8 shrink-0 text-xs font-semibold text-(--text-secondary) text-right">
-              {s.count}
-            </span>
-            <span className="w-10 shrink-0 text-xs text-(--text-muted) text-right">
-              {s.rate !== null ? `${s.rate}%` : ""}
+              {r.count}
             </span>
           </div>
         ))}
       </div>
 
-      {/* Headline conversion rates */}
-      <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-(--border)">
-        <div>
-          <p className="text-2xl font-bold text-(--text-primary)">
-            {conversion.closeRate}%
-          </p>
-          <p className="text-[11px] text-(--text-muted)">
-            Lead → won ({conversion.confirmed}/{conversion.total})
-          </p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-(--text-primary)">
-            {conversion.winRate}%
-          </p>
-          <p className="text-[11px] text-(--text-muted)">
-            Win rate on quoted ({conversion.confirmed}/{conversion.quoted})
-          </p>
-        </div>
+      {/* Headline win rate */}
+      <div className="mt-4 pt-4 border-t border-(--border)">
+        <p className="text-2xl font-bold text-(--text-primary)">
+          {conversion.winRate}%
+        </p>
+        <p className="text-[11px] text-(--text-muted)">
+          Win rate — won ÷ decided ({conversion.won}/{conversion.decided})
+        </p>
       </div>
 
       {/* Quote acceptance (from real quote statuses) */}

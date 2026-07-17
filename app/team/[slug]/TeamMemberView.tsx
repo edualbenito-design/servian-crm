@@ -45,6 +45,7 @@ const categoryDot: Record<ProjectCategory, string> = {
   pending: "bg-sky-500",
   "follow-up": "bg-amber-500",
   completed: "bg-emerald-500",
+  lost: "bg-red-500",
 };
 
 // Filter chips: value maps to a category (or "all").
@@ -90,6 +91,7 @@ export function TeamMemberView({
     { value: "pending", label: "To Contact", count: stats.pending },
     { value: "follow-up", label: "In Follow-up", count: stats.followUp },
     { value: "completed", label: "Completed", count: stats.completed },
+    { value: "lost", label: "Lost / Ghosting", count: stats.lost },
   ];
 
   return (

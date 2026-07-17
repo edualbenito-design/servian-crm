@@ -1,4 +1,5 @@
 import type { Client, Project, Salesperson } from "./data";
+import { isCompletedStage, isDeadStage } from "./data";
 
 // A project together with the client it belongs to, so it can be shown and
 // linked from the team views.
@@ -10,20 +11,23 @@ export interface AssignedProject {
 }
 
 // The commercial categories the user works with.
-export type ProjectCategory = "pending" | "follow-up" | "completed";
+export type ProjectCategory = "pending" | "follow-up" | "completed" | "lost";
 
 export const CATEGORY_LABEL: Record<ProjectCategory, string> = {
   pending: "Pending Contact",
   "follow-up": "In Follow-up",
   completed: "Completed",
+  lost: "Lost / Ghosting",
 };
 
 // Classifies a project by where it sits in the pipeline.
-//  - pending:   Stage 1 (Lead Received) — nobody has reached out yet
-//  - completed: Stage 8, or marked completed
-//  - follow-up: everything in between (Stages 2–7, still in progress)
+//  - pending:   Stage 1 (New Lead) — nobody has reached out yet
+//  - completed: Completed (won job finished)
+//  - lost:      Lost or Ghosting (dead deals)
+//  - follow-up: everything in between (still in progress / on site)
 export function projectCategory(p: Project): ProjectCategory {
-  if (p.pipelineStage === 8 || p.status === "completed") return "completed";
+  if (isDeadStage(p.pipelineStage)) return "lost";
+  if (isCompletedStage(p.pipelineStage)) return "completed";
   if (p.pipelineStage === 1) return "pending";
   return "follow-up";
 }
@@ -54,17 +58,20 @@ export interface TeamStats {
   pending: number;
   followUp: number;
   completed: number;
-  open: number; // pending + follow-up (everything not finished)
+  lost: number; // lost + ghosting (dead deals)
+  open: number; // pending + follow-up (everything still live)
 }
 
 export function statsFor(projects: AssignedProject[]): TeamStats {
   let pending = 0;
   let followUp = 0;
   let completed = 0;
+  let lost = 0;
   for (const { project } of projects) {
     const cat = projectCategory(project);
     if (cat === "pending") pending++;
     else if (cat === "follow-up") followUp++;
+    else if (cat === "lost") lost++;
     else completed++;
   }
   return {
@@ -72,6 +79,7 @@ export function statsFor(projects: AssignedProject[]): TeamStats {
     pending,
     followUp,
     completed,
+    lost,
     open: pending + followUp,
   };
 }

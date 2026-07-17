@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, nextPendingFollowUp, advanceAlert } from "./data";
+import { quoteTotals, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
@@ -740,7 +740,7 @@ export async function getClientValues(assignedTo?: string): Promise<ClientValue[
   let cq = db
     .from("clients")
     .select(
-      "id, name, phone, assigned_to, created_at, deleted_at, projects(id, status, end_date, deleted_at)"
+      "id, name, phone, assigned_to, created_at, deleted_at, projects(id, status, pipeline_stage, end_date, deleted_at)"
     );
   if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
   const { data: clientsRaw } = await cq;
@@ -753,7 +753,7 @@ export async function getClientValues(assignedTo?: string): Promise<ClientValue[
     assigned_to: string;
     created_at: string | null;
     deleted_at: string | null;
-    projects: { id: string; status: string | null; end_date: string | null; deleted_at: string | null }[] | null;
+    projects: { id: string; status: string | null; pipeline_stage: number | null; end_date: string | null; deleted_at: string | null }[] | null;
   };
   const clients = (clientsRaw as Row[]).filter((c) => !c.deleted_at);
   const inScope = new Set(clients.map((c) => c.id));
@@ -787,8 +787,15 @@ export async function getClientValues(assignedTo?: string): Promise<ClientValue[
 
   const out: ClientValue[] = clients.map((c) => {
     const projects = (c.projects ?? []).filter((p) => !p.deleted_at);
-    const completedCount = projects.filter((p) => p.status === "completed").length;
-    const activeCount = projects.filter((p) => p.status === "active" || p.status === "on-hold").length;
+    // Outcome from the pipeline stage (7 = Completed, 8/9 = dead, 1–6 = live).
+    const stageOf = (p: { pipeline_stage: number | null }) =>
+      (p.pipeline_stage ?? 1) as PipelineStage;
+    const completedCount = projects.filter((p) =>
+      isCompletedStage(stageOf(p))
+    ).length;
+    const activeCount = projects.filter(
+      (p) => !isDeadStage(stageOf(p)) && !isCompletedStage(stageOf(p))
+    ).length;
     // Most recent signal: last payment, last activity, latest project end, created.
     const signals = [
       lastPay.get(c.id),
