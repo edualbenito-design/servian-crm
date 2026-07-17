@@ -862,6 +862,124 @@ export interface QuoteStats {
   acceptanceRate: number; // accepted / decided (%)
 }
 
+// ── Monthly pipeline movement ("this month" photo) ─────────────────────────────
+// For each recent month: which deals entered, and which reached an outcome
+// (won / completed / lost / ghosting) that month — derived from the stage-change
+// history we log. Each item links back to its client & project.
+
+export interface MovementItem {
+  clientId: string;
+  clientName: string;
+  projectId: string;
+  projectName: string;
+}
+export interface MonthMovement {
+  month: string; // YYYY-MM
+  entered: MovementItem[];
+  won: MovementItem[];
+  completed: MovementItem[];
+  lost: MovementItem[];
+  ghosting: MovementItem[];
+}
+
+export async function getMonthlyMovement(
+  assignedTo?: string,
+  monthsBack = 6
+): Promise<MonthMovement[]> {
+  const db = serverClient();
+
+  // Clients in scope + their projects (names, creation, archived flag).
+  let cq = db
+    .from("clients")
+    .select("id, name, assigned_to, deleted_at, projects(id, name, created_at, deleted_at)");
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw } = await cq;
+  if (!clientsRaw) return [];
+
+  type PRow = { id: string; name: string; created_at: string | null; deleted_at: string | null };
+  type CRow = { id: string; name: string; deleted_at: string | null; projects: PRow[] | null };
+
+  const clientName = new Map<string, string>();
+  const projectName = new Map<string, string>();
+  const projectClient = new Map<string, string>();
+  const inScopeClient = new Set<string>();
+  const projectsList: { id: string; clientId: string; createdAt: string | null }[] = [];
+  for (const c of (clientsRaw as CRow[]).filter((c) => !c.deleted_at)) {
+    clientName.set(c.id, c.name);
+    inScopeClient.add(c.id);
+    for (const p of c.projects ?? []) {
+      if (p.deleted_at) continue;
+      projectName.set(p.id, p.name);
+      projectClient.set(p.id, c.id);
+      projectsList.push({ id: p.id, clientId: c.id, createdAt: p.created_at });
+    }
+  }
+
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  const blank = (): MonthMovement => ({
+    month: "",
+    entered: [],
+    won: [],
+    completed: [],
+    lost: [],
+    ghosting: [],
+  });
+  const byMonth = new Map<string, MonthMovement>();
+  for (const m of months) byMonth.set(m, { ...blank(), month: m });
+
+  const item = (projectId: string): MovementItem | null => {
+    const clientId = projectClient.get(projectId);
+    if (!clientId) return null;
+    return {
+      clientId,
+      clientName: clientName.get(clientId) ?? "Client",
+      projectId,
+      projectName: projectName.get(projectId) ?? "Project",
+    };
+  };
+
+  // Entered = projects created in the month.
+  for (const p of projectsList) {
+    const m = p.createdAt?.slice(0, 7);
+    if (!m) continue;
+    const bucket = byMonth.get(m);
+    const it = item(p.id);
+    if (bucket && it) bucket.entered.push(it);
+  }
+
+  // Outcomes = stage-change activities into stages 6/7/8/9.
+  // Stage NUMBERS changed meaning on the pipeline redesign (2026-07-17): older
+  // "Stage 8" meant "Completed", now it means "Lost". Only trust logs from the
+  // redesign onward so historical moves aren't miscategorised. (Fresh deploys
+  // have no earlier data, so this date is harmless for them.)
+  const STAGE_SEMANTICS_SINCE = "2026-07-17";
+  const { data: acts } = await db
+    .from("activities")
+    .select("project_id, description, created_at")
+    .eq("type", "stage_changed")
+    .gte("created_at", STAGE_SEMANTICS_SINCE);
+  for (const a of (acts as { project_id: string | null; description: string; created_at: string }[] | null) ?? []) {
+    if (!a.project_id || !projectClient.has(a.project_id)) continue;
+    const m = a.created_at?.slice(0, 7);
+    const bucket = m ? byMonth.get(m) : undefined;
+    if (!bucket) continue;
+    const stage = Number(a.description.match(/Stage (\d)/)?.[1] ?? 0);
+    const it = item(a.project_id);
+    if (!it) continue;
+    if (stage === 6) bucket.won.push(it);
+    else if (stage === 7) bucket.completed.push(it);
+    else if (stage === 8) bucket.lost.push(it);
+    else if (stage === 9) bucket.ghosting.push(it);
+  }
+
+  return months.map((m) => byMonth.get(m)!);
+}
+
 export async function getQuoteStats(assignedTo?: string): Promise<QuoteStats> {
   const empty: QuoteStats = {
     draft: 0,

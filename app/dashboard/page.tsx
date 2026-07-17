@@ -1,4 +1,4 @@
-import { getClients, getQuoteStats } from "@/lib/db";
+import { getClients, getQuoteStats, getMonthlyMovement } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import {
   computeKpis,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/analytics";
 import { SalesDashboard } from "./SalesDashboard";
 import { ConversionCard } from "./ConversionCard";
+import { ThisMonthCard } from "./ThisMonthCard";
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -65,17 +66,20 @@ export default async function DashboardPage() {
   if (profile && !profile.isManager) {
     const myClients = await getClients(profile.name);
     const myQuoteStats = await getQuoteStats(profile.name);
+    const myMovement = await getMonthlyMovement(profile.name);
     return (
       <SalesDashboard
         clients={myClients}
         name={profile.name}
         quoteStats={myQuoteStats}
+        movement={myMovement}
       />
     );
   }
 
   const clients = await getClients();
   const quoteStats = await getQuoteStats();
+  const movement = await getMonthlyMovement();
   const conversion = conversionFunnel(clients);
 
   const kpis = computeKpis(clients);
@@ -209,9 +213,10 @@ export default async function DashboardPage() {
         </div>
       </Card>
 
-      {/* Conversion */}
-      <div className="mt-6">
+      {/* Conversion + monthly movement */}
+      <div className="grid lg:grid-cols-2 gap-6 mt-6">
         <ConversionCard conversion={conversion} quoteStats={quoteStats} />
+        <ThisMonthCard movement={movement} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mt-6">

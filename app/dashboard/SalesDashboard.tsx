@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Client } from "@/lib/data";
 import { followUpState, PIPELINE_STAGES } from "@/lib/data";
 import { pipelineFunnel, conversionFunnel } from "@/lib/analytics";
-import type { QuoteStats } from "@/lib/db";
+import type { QuoteStats, MonthMovement } from "@/lib/db";
 import { ConversionCard } from "./ConversionCard";
+import { ThisMonthCard } from "./ThisMonthCard";
 
 function num(n: number) {
   return new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
@@ -34,10 +35,12 @@ export function SalesDashboard({
   clients,
   name,
   quoteStats,
+  movement,
 }: {
   clients: Client[];
   name: string;
   quoteStats: QuoteStats;
+  movement: MonthMovement[];
 }) {
   const projects = clients.flatMap((c) => c.projects);
   const activeProjects = projects.filter((p) => p.status === "active").length;
@@ -197,9 +200,10 @@ export function SalesDashboard({
         </div>
       </div>
 
-      {/* Conversion */}
-      <div className="mt-6">
+      {/* Conversion + monthly movement */}
+      <div className="grid lg:grid-cols-2 gap-6 mt-6">
         <ConversionCard conversion={conversion} quoteStats={quoteStats} />
+        <ThisMonthCard movement={movement} />
       </div>
     </div>
   );
