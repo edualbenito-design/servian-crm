@@ -827,8 +827,9 @@ export interface QuoteStats {
   draft: number;
   sent: number; // sent, awaiting a decision
   accepted: number;
-  rejected: number;
-  decided: number; // accepted + rejected
+  alternative: number; // not chosen, but another quote of the project won (no loss)
+  lost: number; // client didn't go ahead (real loss); includes legacy "rejected"
+  decided: number; // accepted + lost (alternatives excluded)
   acceptanceRate: number; // accepted / decided (%)
 }
 
@@ -837,7 +838,8 @@ export async function getQuoteStats(assignedTo?: string): Promise<QuoteStats> {
     draft: 0,
     sent: 0,
     accepted: 0,
-    rejected: 0,
+    alternative: 0,
+    lost: 0,
     decided: 0,
     acceptanceRate: 0,
   };
@@ -861,20 +863,23 @@ export async function getQuoteStats(assignedTo?: string): Promise<QuoteStats> {
   let draft = 0,
     sent = 0,
     accepted = 0,
-    rejected = 0;
+    alternative = 0,
+    lost = 0;
   for (const q of qs as { status: string; client_id: string }[]) {
     if (!ids.has(q.client_id)) continue;
     if (q.status === "draft") draft++;
     else if (q.status === "sent") sent++;
     else if (q.status === "accepted") accepted++;
-    else if (q.status === "rejected") rejected++;
+    else if (q.status === "alternative") alternative++;
+    else if (q.status === "lost" || q.status === "rejected") lost++;
   }
-  const decided = accepted + rejected;
+  const decided = accepted + lost;
   return {
     draft,
     sent,
     accepted,
-    rejected,
+    alternative,
+    lost,
     decided,
     acceptanceRate: decided > 0 ? Math.round((accepted / decided) * 100) : 0,
   };

@@ -795,27 +795,53 @@ export async function setQuoteStatus(
   projectId: string,
   quoteId: string,
   status: QuoteStatus
-): Promise<{ sentAt?: string }> {
+): Promise<{ sentAt?: string; supersededIds: string[] }> {
   const db = serverClient();
-  const sentAt =
-    status === "sent" ? new Date().toISOString() : null;
+  const sentAt = status === "sent" ? new Date().toISOString() : null;
   const patch: Record<string, unknown> = { status };
   if (status === "sent") patch.sent_at = sentAt;
 
   const { error } = await db.from("quotes").update(patch).eq("id", quoteId);
   if (error) throw new Error(error.message);
 
+  // Accepting one quote makes the other open quotes of the SAME project
+  // "alternative" (the client is paying via this one — those aren't losses).
+  // Resilient: if the DB CHECK constraint hasn't been updated yet (see
+  // sql/2026-07-17-quote-status-alternative-lost.sql), this fails soft and the
+  // acceptance still succeeds — siblings just aren't auto-moved.
+  let supersededIds: string[] = [];
+  if (status === "accepted") {
+    const { data: siblings } = await db
+      .from("quotes")
+      .update({ status: "alternative" })
+      .eq("project_id", projectId)
+      .neq("id", quoteId)
+      .in("status", ["draft", "sent"])
+      .select("id");
+    supersededIds = (siblings as { id: string }[] | null)?.map((s) => s.id) ?? [];
+  }
+
   const label =
     status === "sent"
       ? "marked as sent"
       : status === "accepted"
         ? "accepted by client"
-        : status === "rejected"
-          ? "rejected by client"
-          : "set to draft";
+        : status === "alternative"
+          ? "set as alternative"
+          : status === "lost" || status === "rejected"
+            ? "marked as lost"
+            : "set to draft";
   await logActivity(clientId, "note", `Quote ${label}`, projectId);
+  if (supersededIds.length > 0) {
+    await logActivity(
+      clientId,
+      "note",
+      `${supersededIds.length} other quote${supersededIds.length === 1 ? "" : "s"} set to alternative`,
+      projectId
+    );
+  }
   revalidatePath(`/clients/${clientId}`);
-  return { sentAt: sentAt ?? undefined };
+  return { sentAt: sentAt ?? undefined, supersededIds };
 }
 
 export async function deleteQuote(

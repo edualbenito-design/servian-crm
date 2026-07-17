@@ -130,7 +130,16 @@ export interface ProjectFile {
   url?: string; // short-lived signed URL
 }
 
-export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
+// draft/sent = in progress · accepted = the winning quote · alternative = not
+// chosen because another quote for the SAME project won (no loss) · lost = the
+// client didn't go ahead (real loss). "rejected" is legacy = treated as "lost".
+export type QuoteStatus =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "alternative"
+  | "lost"
+  | "rejected";
 
 export interface QuoteItem {
   description: string;

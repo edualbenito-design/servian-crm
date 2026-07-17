@@ -36,6 +36,9 @@ const statusStyle: Record<QuoteStatus, string> = {
   sent: "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-800/50",
   accepted:
     "bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50",
+  alternative:
+    "bg-zinc-100 text-zinc-500 border border-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-500 dark:border-zinc-700/50",
+  lost: "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/50",
   rejected:
     "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/50",
 };
@@ -44,7 +47,9 @@ const statusLabel: Record<QuoteStatus, string> = {
   draft: "Draft",
   sent: "Sent",
   accepted: "Accepted",
-  rejected: "Rejected",
+  alternative: "Alternative",
+  lost: "Lost",
+  rejected: "Lost",
 };
 
 function money(n: number) {
@@ -487,7 +492,20 @@ export function QuotesSection({
     setQuotes((prev) =>
       prev.map((x) => (x.id === q.id ? { ...x, status } : x))
     );
-    await setQuoteStatus(clientId, projectId, q.id, status);
+    const { supersededIds } = await setQuoteStatus(
+      clientId,
+      projectId,
+      q.id,
+      status
+    );
+    // Reflect siblings the server auto-moved to "alternative".
+    if (supersededIds.length > 0) {
+      setQuotes((prev) =>
+        prev.map((x) =>
+          supersededIds.includes(x.id) ? { ...x, status: "alternative" } : x
+        )
+      );
+    }
   }
 
   async function remove(q: Quote) {
@@ -656,6 +674,12 @@ export function QuotesSection({
                   {q.sentAt ? ` · sent ${formatDate(q.sentAt)}` : ""}
                 </p>
 
+                {q.status === "alternative" && (
+                  <p className="text-[11px] text-(--text-muted) mt-1 italic">
+                    Not chosen — another quote for this project was accepted.
+                  </p>
+                )}
+
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                   <a
                     href={`/quotes/${q.id}`}
@@ -672,7 +696,7 @@ export function QuotesSection({
                   >
                     Edit
                   </button>
-                  {q.status !== "sent" && (
+                  {q.status !== "sent" && q.status !== "accepted" && (
                     <button
                       type="button"
                       onClick={() => changeStatus(q, "sent")}
@@ -687,16 +711,16 @@ export function QuotesSection({
                       onClick={() => changeStatus(q, "accepted")}
                       className="px-2.5 py-1 rounded-md text-xs font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
                     >
-                      Accepted
+                      Accept
                     </button>
                   )}
-                  {q.status !== "rejected" && (
+                  {q.status !== "lost" && q.status !== "rejected" && (
                     <button
                       type="button"
-                      onClick={() => changeStatus(q, "rejected")}
+                      onClick={() => changeStatus(q, "lost")}
                       className="px-2.5 py-1 rounded-md text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                     >
-                      Rejected
+                      Lost
                     </button>
                   )}
                   <button

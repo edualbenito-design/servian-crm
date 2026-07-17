@@ -89,8 +89,11 @@ export function ConversionCard({
           </span>
         </div>
         <p className="mt-2 text-[11px] text-(--text-muted)">
-          {quoteStats.accepted} accepted · {quoteStats.rejected} rejected ·{" "}
+          {quoteStats.accepted} accepted · {quoteStats.lost} lost ·{" "}
           {quoteStats.sent} awaiting reply
+          {quoteStats.alternative > 0
+            ? ` · ${quoteStats.alternative} alternative`
+            : ""}
         </p>
       </div>
     </div>
