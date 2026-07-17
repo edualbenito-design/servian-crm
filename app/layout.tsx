@@ -70,8 +70,17 @@ export default async function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-(--background) text-(--text-primary) antialiased">
         {profile && (
-          <header className="border-b border-(--border) bg-(--surface)">
-            <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+          <header
+            className="border-b border-(--border) bg-(--surface) sticky top-0 z-40"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+          >
+            <div
+              className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2"
+              style={{
+                paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+                paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+              }}
+            >
               <Link
                 href="/home"
                 className="flex items-center gap-2 shrink-0 hover:opacity-80 transition-opacity"
