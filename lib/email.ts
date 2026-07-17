@@ -80,20 +80,78 @@ function shell(name: string, body: string): string {
 }
 
 function followUpEmailHtml(name: string, due: Client[]): string {
-  // No follow-ups today → an encouraging nudge instead of an empty list.
-  if (due.length === 0) {
-    return shell(
-      name,
-      `<p style="color:#555;font-size:14px;margin:0 0 8px;">You have <strong>no follow-ups</strong> due today. 🎉</p>
-       <p style="color:#555;font-size:14px;margin:0 0 20px;">Great chance to get ahead: update your client records, log anything pending, and reach out to a lead or two. Let's give it our all! 💪</p>`
-    );
-  }
   const rows = due.map(rowHtml).join("");
   return shell(
     name,
     `<p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
      <table style="width:100%;border-collapse:collapse;">${rows}</table>`
   );
+}
+
+// ── Weekly Monday summary ───────────────────────────────────────────────────────
+
+// A rotating motivational line — changes each week (by ISO week number).
+const WEEKLY_QUOTES = [
+  "New week, new opportunities — let's make it count! 💪",
+  "Every follow-up is a chance to win the job. Go get them! 🚀",
+  "Small steps every day close big deals. Keep pushing! 🔨",
+  "The best time to reach a client is before they reach a competitor. ⏱️",
+  "Consistency beats intensity. Show up for your clients this week. 🌟",
+  "A quick call today can save a lost deal tomorrow. 📞",
+  "Great work is built one client at a time. Let's build! 🏗️",
+  "Stay close to your leads — momentum is everything. ⚡",
+];
+
+function weeklyQuote(d = new Date()): string {
+  const oneJan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(
+    ((d.getTime() - oneJan.getTime()) / 86400000 + oneJan.getUTCDay() + 1) / 7
+  );
+  return WEEKLY_QUOTES[week % WEEKLY_QUOTES.length];
+}
+
+// Clients whose next follow-up falls within the next 7 days (this week's agenda).
+export function weekAgenda(clients: Client[]): Client[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 7);
+  return clients
+    .filter((c) => {
+      if (!c.nextFollowUp) return false;
+      const due = new Date(c.nextFollowUp + "T00:00:00");
+      return !isNaN(due.getTime()) && due <= end;
+    })
+    .sort((a, b) => (a.nextFollowUp! < b.nextFollowUp! ? -1 : 1));
+}
+
+function weeklyEmailHtml(name: string, week: Client[]): string {
+  const quote = `<p style="background:#faf6ec;border-left:3px solid ${GOLD};padding:10px 14px;border-radius:6px;color:#7a5b1c;font-size:14px;font-style:italic;margin:0 0 20px;">${weeklyQuote()}</p>`;
+  if (week.length === 0) {
+    return shell(
+      name,
+      `${quote}
+       <p style="color:#555;font-size:14px;margin:0 0 8px;">You have <strong>no follow-ups</strong> scheduled this week yet.</p>
+       <p style="color:#555;font-size:14px;margin:0 0 20px;">Perfect time to get ahead: update your client records, plan your visits, and reach out to a lead or two. 💪</p>`
+    );
+  }
+  const rows = week.map(rowHtml).join("");
+  return shell(
+    name,
+    `${quote}
+     <p style="color:#555;font-size:14px;margin:0 0 20px;">Here's your week: <strong>${week.length}</strong> follow-up${week.length === 1 ? "" : "s"} coming up. Tap a name to open the client.</p>
+     <table style="width:100%;border-collapse:collapse;">${rows}</table>`
+  );
+}
+
+export async function sendWeeklyEmail(to: string, name: string, week: Client[]) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: "🗓️ Your week at Servian — plan & priorities",
+    html: weeklyEmailHtml(name, week),
+  });
 }
 
 // Sends one salesperson their due follow-ups. Returns the Resend result.
@@ -106,10 +164,7 @@ export async function sendFollowUpEmail(
   return resend.emails.send({
     from: FROM,
     to,
-    subject:
-      due.length === 0
-        ? "☀️ No follow-ups today — let's get ahead"
-        : `☀️ Your follow-ups today (${due.length})`,
+    subject: `☀️ Your follow-ups today (${due.length})`,
     html: followUpEmailHtml(name, due),
   });
 }

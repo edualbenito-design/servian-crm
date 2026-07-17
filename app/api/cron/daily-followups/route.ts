@@ -3,7 +3,9 @@ import { getClients } from "@/lib/db";
 import {
   recipientProfiles,
   dueFollowUps,
+  weekAgenda,
   sendFollowUpEmail,
+  sendWeeklyEmail,
 } from "@/lib/email";
 import type { Client } from "@/lib/data";
 
@@ -22,17 +24,13 @@ export async function GET(request: Request) {
     }
   }
 
-  // All clients (manager view), then group due follow-ups by salesperson.
+  // Monday (in Dubai) → weekly summary to every salesperson.
+  // Other days → daily briefing, only to people who actually have due items.
+  // 05:00 UTC = 09:00 Dubai, still the same weekday, so getUTCDay() is safe.
+  const forceWeekly = new URL(request.url).searchParams.get("weekly") === "1";
+  const isMonday = new Date().getUTCDay() === 1 || forceWeekly;
+
   const clients = await getClients();
-  const due = dueFollowUps(clients);
-
-  const byPerson = new Map<string, Client[]>();
-  for (const c of due) {
-    const list = byPerson.get(c.assignedTo) ?? [];
-    list.push(c);
-    byPerson.set(c.assignedTo, list);
-  }
-
   const recipients = await recipientProfiles();
   const results: {
     name: string;
@@ -42,37 +40,48 @@ export async function GET(request: Request) {
     error?: string;
   }[] = [];
 
-  // Who gets a daily email: every salesperson (so they get their list OR an
-  // encouraging "nothing today" nudge), plus any manager who happens to have
-  // due follow-ups of their own (managers aren't nudged on empty days).
-  const toEmail = new Map<string, { email: string; list: Client[] }>();
-  for (const r of recipients) {
-    const list = byPerson.get(r.name) ?? [];
-    if (r.role === "sales" || list.length > 0) {
-      toEmail.set(r.name, { email: r.email, list });
+  function groupByPerson(list: Client[]): Map<string, Client[]> {
+    const m = new Map<string, Client[]>();
+    for (const c of list) {
+      const arr = m.get(c.assignedTo) ?? [];
+      arr.push(c);
+      m.set(c.assignedTo, arr);
     }
+    return m;
   }
 
-  for (const [name, { email, list }] of toEmail) {
+  if (isMonday) {
+    // Weekly: every salesperson gets one, even with an empty week.
+    const byPerson = groupByPerson(weekAgenda(clients));
+    for (const r of recipients) {
+      if (r.role !== "sales") continue;
+      const list = byPerson.get(r.name) ?? [];
+      try {
+        const res = await sendWeeklyEmail(r.email, r.name, list);
+        results.push({ name: r.name, email: r.email, count: list.length, sent: !res.error, error: res.error?.message });
+      } catch (e) {
+        results.push({ name: r.name, email: r.email, count: list.length, sent: false, error: e instanceof Error ? e.message : "send failed" });
+      }
+    }
+    return NextResponse.json({ ok: true, mode: "weekly", results });
+  }
+
+  // Daily: only people with overdue/today follow-ups.
+  const emailByName = new Map(recipients.map((r) => [r.name, r.email]));
+  const byPerson = groupByPerson(dueFollowUps(clients));
+  for (const [name, list] of byPerson) {
+    const email = emailByName.get(name);
+    if (!email) {
+      results.push({ name, count: list.length, sent: false, error: "no email" });
+      continue;
+    }
     try {
       const res = await sendFollowUpEmail(email, name, list);
-      results.push({
-        name,
-        email,
-        count: list.length,
-        sent: !res.error,
-        error: res.error?.message,
-      });
+      results.push({ name, email, count: list.length, sent: !res.error, error: res.error?.message });
     } catch (e) {
-      results.push({
-        name,
-        email,
-        count: list.length,
-        sent: false,
-        error: e instanceof Error ? e.message : "send failed",
-      });
+      results.push({ name, email, count: list.length, sent: false, error: e instanceof Error ? e.message : "send failed" });
     }
   }
 
-  return NextResponse.json({ ok: true, totalDue: due.length, results });
+  return NextResponse.json({ ok: true, mode: "daily", results });
 }
