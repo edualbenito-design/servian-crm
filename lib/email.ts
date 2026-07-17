@@ -7,13 +7,20 @@ const APP_URL =
 const FROM = process.env.RESEND_FROM ?? "Servian CRM <onboarding@resend.dev>";
 const GOLD = "#b8944d";
 
-// Maps profile full_name -> login email (join Supabase Auth users with profiles).
-export async function recipientsByName(): Promise<Map<string, string>> {
-  const db = serverClient();
-  const map = new Map<string, string>();
+export interface Recipient {
+  name: string;
+  email: string;
+  role: string; // "manager" | "sales"
+}
 
-  const { data: profiles } = await db.from("profiles").select("id, full_name");
-  if (!profiles) return map;
+// All people with a login (join Supabase Auth users with profiles), incl. role.
+export async function recipientProfiles(): Promise<Recipient[]> {
+  const db = serverClient();
+
+  const { data: profiles } = await db
+    .from("profiles")
+    .select("id, full_name, role");
+  if (!profiles) return [];
 
   const { data: usersData } = await db.auth.admin.listUsers({ perPage: 200 });
   const emailById = new Map<string, string>();
@@ -21,11 +28,18 @@ export async function recipientsByName(): Promise<Map<string, string>> {
     if (u.email) emailById.set(u.id, u.email);
   }
 
-  for (const p of profiles as { id: string; full_name: string | null }[]) {
+  const out: Recipient[] = [];
+  for (const p of profiles as {
+    id: string;
+    full_name: string | null;
+    role: string | null;
+  }[]) {
     const email = emailById.get(p.id);
-    if (p.full_name && email) map.set(p.full_name, email);
+    if (p.full_name && email) {
+      out.push({ name: p.full_name, email, role: p.role ?? "sales" });
+    }
   }
-  return map;
+  return out;
 }
 
 // Follow-ups that need action now: overdue + due today, soonest first.
@@ -54,17 +68,32 @@ function rowHtml(c: Client): string {
     </tr>`;
 }
 
-function followUpEmailHtml(name: string, due: Client[]): string {
-  const rows = due.map(rowHtml).join("");
+function shell(name: string, body: string): string {
   return `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111;">
     <p style="font-size:13px;letter-spacing:2px;color:${GOLD};text-transform:uppercase;margin:0 0 4px;">Servian Contracting · CRM</p>
     <h1 style="font-size:20px;margin:0 0 4px;">Good morning, ${name} ☀️</h1>
-    <p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
-    <table style="width:100%;border-collapse:collapse;">${rows}</table>
+    ${body}
     <a href="${APP_URL}" style="display:inline-block;margin-top:24px;background:${GOLD};color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;">Open the CRM</a>
     <p style="color:#999;font-size:12px;margin-top:24px;">Automated daily reminder from your Servian CRM.</p>
   </div>`;
+}
+
+function followUpEmailHtml(name: string, due: Client[]): string {
+  // No follow-ups today → an encouraging nudge instead of an empty list.
+  if (due.length === 0) {
+    return shell(
+      name,
+      `<p style="color:#555;font-size:14px;margin:0 0 8px;">You have <strong>no follow-ups</strong> due today. 🎉</p>
+       <p style="color:#555;font-size:14px;margin:0 0 20px;">Great chance to get ahead: update your client records, log anything pending, and reach out to a lead or two. Let's give it our all! 💪</p>`
+    );
+  }
+  const rows = due.map(rowHtml).join("");
+  return shell(
+    name,
+    `<p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
+     <table style="width:100%;border-collapse:collapse;">${rows}</table>`
+  );
 }
 
 // Sends one salesperson their due follow-ups. Returns the Resend result.
@@ -77,7 +106,10 @@ export async function sendFollowUpEmail(
   return resend.emails.send({
     from: FROM,
     to,
-    subject: `☀️ Your follow-ups today (${due.length})`,
+    subject:
+      due.length === 0
+        ? "☀️ No follow-ups today — let's get ahead"
+        : `☀️ Your follow-ups today (${due.length})`,
     html: followUpEmailHtml(name, due),
   });
 }

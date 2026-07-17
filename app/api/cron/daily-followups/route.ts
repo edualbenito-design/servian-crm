@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClients } from "@/lib/db";
 import {
-  recipientsByName,
+  recipientProfiles,
   dueFollowUps,
   sendFollowUpEmail,
 } from "@/lib/email";
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     byPerson.set(c.assignedTo, list);
   }
 
-  const recipients = await recipientsByName();
+  const recipients = await recipientProfiles();
   const results: {
     name: string;
     email?: string;
@@ -42,12 +42,18 @@ export async function GET(request: Request) {
     error?: string;
   }[] = [];
 
-  for (const [name, list] of byPerson) {
-    const email = recipients.get(name);
-    if (!email) {
-      results.push({ name, count: list.length, sent: false, error: "no email" });
-      continue;
+  // Who gets a daily email: every salesperson (so they get their list OR an
+  // encouraging "nothing today" nudge), plus any manager who happens to have
+  // due follow-ups of their own (managers aren't nudged on empty days).
+  const toEmail = new Map<string, { email: string; list: Client[] }>();
+  for (const r of recipients) {
+    const list = byPerson.get(r.name) ?? [];
+    if (r.role === "sales" || list.length > 0) {
+      toEmail.set(r.name, { email: r.email, list });
     }
+  }
+
+  for (const [name, { email, list }] of toEmail) {
     try {
       const res = await sendFollowUpEmail(email, name, list);
       results.push({
