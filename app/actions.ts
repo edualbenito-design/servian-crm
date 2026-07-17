@@ -701,6 +701,8 @@ type QuoteFields = {
   issueDate: string;
   validUntil: string;
   vatRate: number;
+  discountPct: number;
+  discountReason: string;
   notes: string;
   items: QuoteItem[];
 };
@@ -733,21 +735,27 @@ export async function createQuote(
 ): Promise<Quote> {
   const db = serverClient();
   const number = await nextQuoteNumber();
-  const { data, error } = await db
+  const pct = Math.min(100, Math.max(0, Number(fields.discountPct) || 0));
+  const base = {
+    project_id: projectId,
+    client_id: clientId,
+    number,
+    status: "draft",
+    issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
+    valid_until: fields.validUntil || null,
+    vat_rate: fields.vatRate,
+    notes: fields.notes.trim() || null,
+    items: cleanItems(fields.items),
+  };
+  // Try with discount columns; retry without if they're not there yet.
+  let { data, error } = await db
     .from("quotes")
-    .insert({
-      project_id: projectId,
-      client_id: clientId,
-      number,
-      status: "draft",
-      issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
-      valid_until: fields.validUntil || null,
-      vat_rate: fields.vatRate,
-      notes: fields.notes.trim() || null,
-      items: cleanItems(fields.items),
-    })
+    .insert({ ...base, discount_pct: pct || null, discount_reason: fields.discountReason.trim() || null })
     .select()
     .single();
+  if (error) {
+    ({ data, error } = await db.from("quotes").insert(base).select().single());
+  }
 
   if (error) throw new Error(error.message);
   await logActivity(clientId, "note", `Quote ${number} created`, projectId);
@@ -762,6 +770,8 @@ export async function createQuote(
     issueDate: data.issue_date,
     validUntil: data.valid_until ?? undefined,
     vatRate: Number(data.vat_rate) || 0,
+    discountPct: data.discount_pct != null ? Number(data.discount_pct) : undefined,
+    discountReason: data.discount_reason ?? undefined,
     notes: data.notes ?? undefined,
     items: data.items ?? [],
     sentAt: data.sent_at ?? undefined,
@@ -776,16 +786,22 @@ export async function updateQuote(
   fields: QuoteFields
 ): Promise<void> {
   const db = serverClient();
-  const { error } = await db
+  const pct = Math.min(100, Math.max(0, Number(fields.discountPct) || 0));
+  const base = {
+    issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
+    valid_until: fields.validUntil || null,
+    vat_rate: fields.vatRate,
+    notes: fields.notes.trim() || null,
+    items: cleanItems(fields.items),
+  };
+  // Try with discount columns; retry without if they're not there yet.
+  let { error } = await db
     .from("quotes")
-    .update({
-      issue_date: fields.issueDate || new Date().toISOString().slice(0, 10),
-      valid_until: fields.validUntil || null,
-      vat_rate: fields.vatRate,
-      notes: fields.notes.trim() || null,
-      items: cleanItems(fields.items),
-    })
+    .update({ ...base, discount_pct: pct || null, discount_reason: fields.discountReason.trim() || null })
     .eq("id", quoteId);
+  if (error) {
+    ({ error } = await db.from("quotes").update(base).eq("id", quoteId));
+  }
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${clientId}`);
 }

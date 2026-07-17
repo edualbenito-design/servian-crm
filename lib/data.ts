@@ -194,6 +194,8 @@ export interface Quote {
   issueDate: string; // YYYY-MM-DD
   validUntil?: string;
   vatRate: number; // percent, e.g. 5
+  discountPct?: number; // optional discount off the subtotal, e.g. 5
+  discountReason?: string; // why the discount was given
   notes?: string;
   items: QuoteItem[];
   sentAt?: string;
@@ -242,13 +244,22 @@ export function followUpState(dateStr?: string): FollowUpState {
 }
 
 // Totals helper (kept here so UI and PDF agree).
-export function quoteTotals(q: { items: QuoteItem[]; vatRate: number }) {
+export function quoteTotals(q: {
+  items: QuoteItem[];
+  vatRate: number;
+  discountPct?: number;
+}) {
   const subtotal = q.items.reduce(
     (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0),
     0
   );
-  const vat = subtotal * ((Number(q.vatRate) || 0) / 100);
-  return { subtotal, vat, total: subtotal + vat };
+  // Discount comes off the subtotal; VAT is charged on the discounted (net)
+  // amount — the correct order for UAE VAT.
+  const pct = Math.min(100, Math.max(0, Number(q.discountPct) || 0));
+  const discount = subtotal * (pct / 100);
+  const net = subtotal - discount;
+  const vat = net * ((Number(q.vatRate) || 0) / 100);
+  return { subtotal, discount, discountPct: pct, net, vat, total: net + vat };
 }
 
 // ── Advance-payment warning ────────────────────────────────────────────────────

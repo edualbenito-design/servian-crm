@@ -96,6 +96,8 @@ type Form = {
   issueDate: string;
   validUntil: string;
   vatRate: number;
+  discountPct: number;
+  discountReason: string;
   notes: string;
   items: QuoteItem[];
 };
@@ -105,6 +107,8 @@ function emptyForm(): Form {
     issueDate: new Date().toISOString().slice(0, 10),
     validUntil: "",
     vatRate: 5,
+    discountPct: 0,
+    discountReason: "",
     notes: "",
     items: [{ description: "", qty: 1, unitPrice: 0 }],
   };
@@ -115,6 +119,8 @@ function toForm(q: Quote): Form {
     issueDate: q.issueDate,
     validUntil: q.validUntil ?? "",
     vatRate: q.vatRate,
+    discountPct: q.discountPct ?? 0,
+    discountReason: q.discountReason ?? "",
     notes: q.notes ?? "",
     items: q.items.length ? q.items : [{ description: "", qty: 1, unitPrice: 0 }],
   };
@@ -475,6 +481,8 @@ export function QuotesSection({
                   issueDate: f.issueDate,
                   validUntil: f.validUntil || undefined,
                   vatRate: f.vatRate,
+                  discountPct: f.discountPct || undefined,
+                  discountReason: f.discountReason || undefined,
                   notes: f.notes || undefined,
                   items: f.items,
                 }
@@ -854,7 +862,18 @@ export function QuotesSection({
                   <label className="block text-xs font-medium text-(--text-secondary) mb-1.5">VAT %</label>
                   <input type="number" min="0" value={f.vatRate} onChange={(e) => setF((p) => ({ ...p, vatRate: Number(e.target.value) }))} className={INPUT} />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-(--text-secondary) mb-1.5">Discount %</label>
+                  <input type="number" min="0" max="100" value={f.discountPct} onChange={(e) => setF((p) => ({ ...p, discountPct: Number(e.target.value) }))} className={INPUT} placeholder="0" />
+                </div>
               </div>
+
+              {f.discountPct > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-(--text-secondary) mb-1.5">Discount reason <span className="text-(--text-muted) font-normal">(shown on the quote)</span></label>
+                  <input type="text" value={f.discountReason} onChange={(e) => setF((p) => ({ ...p, discountReason: e.target.value }))} className={INPUT} placeholder="e.g. Repeat client, seasonal offer" />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-(--text-secondary) mb-1.5">Notes / Terms <span className="text-(--text-muted) font-normal">(optional)</span></label>
@@ -867,6 +886,15 @@ export function QuotesSection({
                   <span className="text-(--text-muted)">Subtotal</span>
                   <span className="font-mono text-(--text-secondary)">{money(totals.subtotal)}</span>
                 </div>
+                {totals.discount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      Discount ({f.discountPct}%)
+                      {f.discountReason ? ` — ${f.discountReason}` : ""}
+                    </span>
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400">− {money(totals.discount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-(--text-muted)">VAT ({f.vatRate}%)</span>
                   <span className="font-mono text-(--text-secondary)">{money(totals.vat)}</span>

@@ -33,7 +33,14 @@ export function QuotePrint({
   pctPaid = 0,
 }: {
   quote: Quote;
-  totals: { subtotal: number; vat: number; total: number };
+  totals: {
+    subtotal: number;
+    discount: number;
+    discountPct: number;
+    net: number;
+    vat: number;
+    total: number;
+  };
   client: { name: string; phone: string; email: string; location: string };
   projectName: string;
   variant?: "quote" | "invoice";
@@ -208,6 +215,15 @@ export function QuotePrint({
               <span className="text-zinc-500">Sub Total</span>
               <span>{money(totals.subtotal)}</span>
             </div>
+            {totals.discount > 0 && (
+              <div className="flex justify-between py-1.5">
+                <span className="text-zinc-500">
+                  Discount ({totals.discountPct}%)
+                  {quote.discountReason ? ` — ${quote.discountReason}` : ""}
+                </span>
+                <span>− {money(totals.discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between py-1.5">
               <span className="text-zinc-500">VAT ({quote.vatRate}%)</span>
               <span>{money(totals.vat)}</span>

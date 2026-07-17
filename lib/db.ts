@@ -17,6 +17,8 @@ type DbQuote = {
   created_at: string;
   invoice_number?: string | null;
   invoiced_at?: string | null;
+  discount_pct?: number | null;
+  discount_reason?: string | null;
 };
 
 type DbPayment = {
@@ -97,6 +99,8 @@ function toQuote(q: DbQuote): Quote {
     issueDate: q.issue_date,
     validUntil: q.valid_until ?? undefined,
     vatRate: Number(q.vat_rate) || 0,
+    discountPct: q.discount_pct != null ? Number(q.discount_pct) : undefined,
+    discountReason: q.discount_reason ?? undefined,
     notes: q.notes ?? undefined,
     items: q.items ?? [],
     sentAt: q.sent_at ?? undefined,
@@ -557,6 +561,7 @@ type DbQuoteLite = {
   client_id: string;
   items: QuoteItem[] | null;
   vat_rate: number;
+  discount_pct: number | null;
   issue_date: string;
   invoice_number: string | null;
   invoiced_at: string | null;
@@ -596,10 +601,23 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
   }
 
   // Only ACCEPTED quotes represent money the client committed to pay.
-  const { data: quotesRaw, error: qErr } = await db
-    .from("quotes")
-    .select("id, number, project_id, client_id, items, vat_rate, issue_date, invoice_number, invoiced_at")
-    .eq("status", "accepted");
+  // Resilient: retry without discount_pct if that column isn't there yet.
+  const QCOLS = "id, number, project_id, client_id, items, vat_rate, issue_date, invoice_number, invoiced_at";
+  let quotesRaw: DbQuoteLite[] | null = null;
+  let qErr: unknown = null;
+  {
+    const r = await db
+      .from("quotes")
+      .select(`${QCOLS}, discount_pct`)
+      .eq("status", "accepted");
+    quotesRaw = r.data as DbQuoteLite[] | null;
+    qErr = r.error;
+  }
+  if (qErr) {
+    const r = await db.from("quotes").select(QCOLS).eq("status", "accepted");
+    quotesRaw = r.data as DbQuoteLite[] | null;
+    qErr = r.error;
+  }
   if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [], collectedPayments: [] };
 
   // Payments (fail soft if the table / newer columns aren't there yet).
@@ -679,7 +697,11 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     const client = clientById.get(q.client_id);
     if (!client) continue; // archived client, or outside this salesperson's scope
     if (!activeProject.has(q.project_id)) continue; // archived project
-    const { total } = quoteTotals({ items: q.items ?? [], vatRate: Number(q.vat_rate) || 0 });
+    const { total } = quoteTotals({
+      items: q.items ?? [],
+      vatRate: Number(q.vat_rate) || 0,
+      discountPct: q.discount_pct != null ? Number(q.discount_pct) : 0,
+    });
     const paid = paidByQuote.get(q.id) ?? 0;
     const balance = Math.round((total - paid) * 100) / 100;
     if (balance <= 0.001) continue; // fully paid → nothing to collect
