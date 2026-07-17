@@ -12,7 +12,7 @@ function monthLabel(key: string) {
   });
 }
 
-type Cat = "entered" | "won" | "completed" | "lost" | "ghosting";
+type Cat = "entered" | "won" | "completed" | "lost" | "ghosting" | "overdue";
 
 const CATS: { key: Cat; label: string; dot: string; text: string }[] = [
   { key: "entered", label: "Entered", dot: "bg-sky-500", text: "text-sky-600 dark:text-sky-400" },
@@ -20,6 +20,7 @@ const CATS: { key: Cat; label: string; dot: string; text: string }[] = [
   { key: "completed", label: "Completed", dot: "bg-emerald-600", text: "text-emerald-700 dark:text-emerald-300" },
   { key: "lost", label: "Lost", dot: "bg-red-500", text: "text-red-600 dark:text-red-400" },
   { key: "ghosting", label: "Ghosting", dot: "bg-zinc-400", text: "text-zinc-500 dark:text-zinc-400" },
+  { key: "overdue", label: "⚠ Overdue follow-ups", dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
 ];
 
 function ItemList({ items }: { items: MovementItem[] }) {
@@ -57,6 +58,7 @@ export function ThisMonthCard({ movement }: { movement: MonthMovement[] }) {
       completed: [],
       lost: [],
       ghosting: [],
+      overdue: [],
     };
 
   return (
@@ -75,7 +77,9 @@ export function ThisMonthCard({ movement }: { movement: MonthMovement[] }) {
         >
           {[...movement].reverse().map((m) => (
             <option key={m.month} value={m.month}>
+              {m.overdue.length > 0 ? "⚠ " : ""}
               {monthLabel(m.month)}
+              {m.overdue.length > 0 ? ` (${m.overdue.length} overdue)` : ""}
             </option>
           ))}
         </select>

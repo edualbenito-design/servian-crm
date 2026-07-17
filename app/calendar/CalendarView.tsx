@@ -317,6 +317,57 @@ export function CalendarView({
       {/* Subscribe your phone to this feed */}
       {feedUrl && <IcalSubscribe url={feedUrl} />}
 
+      {/* Overdue follow-ups — pending tasks whose date already passed. */}
+      {(() => {
+        const overdue = pending
+          .filter((it) => it.dueDate < today)
+          .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+        if (overdue.length === 0) return null;
+        return (
+          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20 p-4">
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300 mb-2 flex items-center gap-1.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Overdue follow-ups ({overdue.length}) — earlier work still pending
+            </p>
+            <div className="space-y-2">
+              {overdue.map((it) => (
+                <div
+                  key={it.followUpId}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-(--card) border border-(--border) px-3 py-2"
+                >
+                  <Link href={`/clients/${it.clientId}`} className="min-w-0 flex-1 group">
+                    <p className="text-sm font-medium text-(--text-primary) group-hover:text-(--accent) truncate">
+                      {it.name}
+                      {it.projectName ? ` · ${it.projectName}` : ""}
+                      {isManager ? ` · ${it.assignedTo}` : ""}
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Due {it.dueDate}
+                      {it.note ? ` · ${it.note}` : ""}
+                    </p>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const [y, m] = it.dueDate.split("-").map(Number);
+                      setView({ year: y, month: m - 1 });
+                      setSelected(it.dueDate);
+                    }}
+                    className="shrink-0 text-xs font-semibold text-(--accent) hover:underline"
+                  >
+                    View
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Advance-payment alerts */}
       {alerts.length > 0 && (
         <div className="mb-6 rounded-xl border border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4">

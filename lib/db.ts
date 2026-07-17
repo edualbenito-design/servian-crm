@@ -880,6 +880,7 @@ export interface MonthMovement {
   completed: MovementItem[];
   lost: MovementItem[];
   ghosting: MovementItem[];
+  overdue: MovementItem[]; // pending follow-ups due that month, now past — needs attention
 }
 
 export async function getMonthlyMovement(
@@ -928,6 +929,7 @@ export async function getMonthlyMovement(
     completed: [],
     lost: [],
     ghosting: [],
+    overdue: [],
   });
   const byMonth = new Map<string, MonthMovement>();
   for (const m of months) byMonth.set(m, { ...blank(), month: m });
@@ -975,6 +977,28 @@ export async function getMonthlyMovement(
     else if (stage === 7) bucket.completed.push(it);
     else if (stage === 8) bucket.lost.push(it);
     else if (stage === 9) bucket.ghosting.push(it);
+  }
+
+  // Overdue = still-pending follow-ups whose due date is already past. Bucketed
+  // by their due month so an old month keeps flagging until the work is done.
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (inScopeClient.size > 0) {
+    const { data: fus } = await db
+      .from("follow_ups")
+      .select("client_id, project_id, due_date, status")
+      .in("client_id", Array.from(inScopeClient))
+      .eq("status", "pending");
+    for (const f of (fus as { client_id: string; project_id: string | null; due_date: string; status: string }[] | null) ?? []) {
+      if (!f.due_date || f.due_date >= todayStr) continue; // not overdue
+      const bucket = byMonth.get(f.due_date.slice(0, 7));
+      if (!bucket) continue;
+      bucket.overdue.push({
+        clientId: f.client_id,
+        clientName: clientName.get(f.client_id) ?? "Client",
+        projectId: f.project_id ?? "",
+        projectName: f.project_id ? projectName.get(f.project_id) ?? "Project" : "General follow-up",
+      });
+    }
   }
 
   return months.map((m) => byMonth.get(m)!);
