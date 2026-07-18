@@ -894,22 +894,22 @@ export async function getMonthlyMovement(
 ): Promise<MonthMovement[]> {
   const db = serverClient();
 
-  // Clients in scope + their projects (names, creation, archived flag).
+  // Clients in scope + their projects (names, creation, outcome stage/date).
   let cq = db
     .from("clients")
-    .select("id, name, assigned_to, deleted_at, projects(id, name, created_at, deleted_at)");
+    .select("id, name, assigned_to, deleted_at, projects(id, name, created_at, pipeline_stage, closed_at, deleted_at)");
   if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
   const { data: clientsRaw } = await cq;
   if (!clientsRaw) return [];
 
-  type PRow = { id: string; name: string; created_at: string | null; deleted_at: string | null };
+  type PRow = { id: string; name: string; created_at: string | null; pipeline_stage: number | null; closed_at: string | null; deleted_at: string | null };
   type CRow = { id: string; name: string; deleted_at: string | null; projects: PRow[] | null };
 
   const clientName = new Map<string, string>();
   const projectName = new Map<string, string>();
   const projectClient = new Map<string, string>();
   const inScopeClient = new Set<string>();
-  const projectsList: { id: string; clientId: string; createdAt: string | null }[] = [];
+  const projectsList: { id: string; clientId: string; createdAt: string | null; stage: PipelineStage; closedAt: string | null }[] = [];
   for (const c of (clientsRaw as CRow[]).filter((c) => !c.deleted_at)) {
     clientName.set(c.id, c.name);
     inScopeClient.add(c.id);
@@ -917,7 +917,13 @@ export async function getMonthlyMovement(
       if (p.deleted_at) continue;
       projectName.set(p.id, p.name);
       projectClient.set(p.id, c.id);
-      projectsList.push({ id: p.id, clientId: c.id, createdAt: p.created_at });
+      projectsList.push({
+        id: p.id,
+        clientId: c.id,
+        createdAt: p.created_at,
+        stage: (p.pipeline_stage ?? 1) as PipelineStage,
+        closedAt: p.closed_at,
+      });
     }
   }
 
@@ -959,29 +965,22 @@ export async function getMonthlyMovement(
     if (bucket && it) bucket.entered.push(it);
   }
 
-  // Outcomes = stage-change activities into stages 6/7/8/9.
-  // Stage NUMBERS changed meaning on the pipeline redesign (2026-07-17): older
-  // "Stage 8" meant "Completed", now it means "Lost". Only trust logs from the
-  // redesign onward so historical moves aren't miscategorised. (Fresh deploys
-  // have no earlier data, so this date is harmless for them.)
-  const STAGE_SEMANTICS_SINCE = "2026-07-17";
-  const { data: acts } = await db
-    .from("activities")
-    .select("project_id, description, created_at")
-    .eq("type", "stage_changed")
-    .gte("created_at", STAGE_SEMANTICS_SINCE);
-  for (const a of (acts as { project_id: string | null; description: string; created_at: string }[] | null) ?? []) {
-    if (!a.project_id || !projectClient.has(a.project_id)) continue;
-    const m = a.created_at?.slice(0, 7);
-    const bucket = m ? byMonth.get(m) : undefined;
+  // Outcomes = projects that reached a final stage, bucketed by closed_at (the
+  // month the deal was resolved) and classified by its current outcome stage.
+  // Robust: no stage-change-log parsing and no historical-semantics guard — a
+  // deal only has closed_at while it sits in an outcome stage (6/7/8/9), and it's
+  // cleared if reopened into the funnel. (A deal won then completed in a later
+  // month counts in its first-close month; fine for this overview.)
+  for (const p of projectsList) {
+    if (!p.closedAt) continue;
+    const bucket = byMonth.get(p.closedAt.slice(0, 7));
     if (!bucket) continue;
-    const stage = Number(a.description.match(/Stage (\d)/)?.[1] ?? 0);
-    const it = item(a.project_id);
+    const it = item(p.id);
     if (!it) continue;
-    if (stage === 6) bucket.won.push(it);
-    else if (stage === 7) bucket.completed.push(it);
-    else if (stage === 8) bucket.lost.push(it);
-    else if (stage === 9) bucket.ghosting.push(it);
+    if (p.stage === 6) bucket.won.push(it);
+    else if (p.stage === 7) bucket.completed.push(it);
+    else if (p.stage === 8) bucket.lost.push(it);
+    else if (p.stage === 9) bucket.ghosting.push(it);
   }
 
   // Overdue = still-pending follow-ups whose due date is already past. Bucketed
