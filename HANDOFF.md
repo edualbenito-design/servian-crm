@@ -84,23 +84,30 @@
   tarjetas de la columna **Completed** un badge verde "Paid" o ámbar "AED X pending"
   para que el comercial persiga el saldo. (No se tocó Monthly movement; opción futura.)
 
-### 🔜 A DESARROLLAR (siguiente)
-- **Filtro global por mes en el Dashboard.** Hoy solo la tarjeta "This month" filtra por
-  mes; Eduardo quiere un selector ARRIBA que filtre TODO el dashboard. DECISIÓN de
-  Eduardo (2026-07-18): modelo **"lo que pasó en junio" (actividad)** — cada dato usa su
-  propia fecha (leads captados, facturas emitidas, cobros, follow-ups vencidos… en ese
-  mes). OJO: el embudo por etapa y el pipeline value son "foto de ahora" y no tienen mes
-  → dejarlos globales o fuera del filtro. Quitar filtro = todo el histórico. Patrón de
-  selector como el del Pipeline/ClientsTable. Aquí probablemente conviene mover cálculos
-  a consultas por fecha (facturas por `invoiced_at`, cobros por `paid_on`, outcomes por
-  `closed_at`, overdue por `due_date`) en vez de derivar de `clients` en memoria.
-- (Menor) Usar `closed_at` en `getMonthlyMovement` para una foto mensual más robusta que
-  el parseo del log de cambios de etapa. Encaja bien junto al filtro del Dashboard.
+### ✅ Hecho 2026-07-18/19 — Filtro global por mes en el Dashboard (desplegado)
+- Selector **"Month"** arriba del Dashboard (managers Y comerciales) vía URL `?month=`.
+  Sin mes = dashboard general de siempre. Con mes = informe **"lo que pasó en ese mes"**
+  (modelo actividad, decisión de Eduardo): cada métrica cuenta por su propia fecha —
+  leads por captación, deals por mes de cierre (`closed_at`), facturas por `invoiced_at`,
+  dinero por `paid_on`, overdue por `due_date` — + desglose por comercial + tiempo medio
+  de cierre. El embudo/pipeline value NO están (son "ahora"); se ven en "All time".
+- Código: `getReportMonths` + `getMonthlyReport` en `lib/db.ts`; componentes
+  `MonthPicker` + `MonthlyReportView`; `SalesDashboard` acepta prop `monthPicker`.
+  **Sin SQL nuevo** (usa columnas existentes + `closed_at`).
 
-### 📋 Preferencia de Eduardo (2026-07-18)
-- **SQL siempre con botón de copiar:** cuando una feature necesite SQL, entregarlo como
-  **artifact con botón copiar** (además de guardar el `.sql` en `sql/`), para copia-pega
-  sin fallos. No basta el bloque de código en el chat.
+### 🔜 A DESARROLLAR (siguiente)
+- (Menor) Usar `closed_at` en `getMonthlyMovement` para una foto mensual más robusta que
+  el parseo del log de cambios de etapa (hoy `getMonthlyReport` ya usa `closed_at`;
+  `getMonthlyMovement` sigue con el log antiguo — unificarlos algún día).
+- Los 4 puntos originales del roadmap (filtro pipeline, cierre/Cleanup, captado-vs-cerrado,
+  pago en Completed) están TODOS hechos. Pendientes reales siguen siendo de terceros
+  (§10: activar/ampliar email depende de Sergio; RRSS on hold).
+
+### 📋 Preferencia de Eduardo (2026-07-18) — SQL
+- **SQL como bloque de código plano en el chat** (el formato de siempre, ASCII, SIN
+  comentarios que un `--` pueda romper si se aplastan saltos de línea). Su cliente ya
+  tiene botón de copiar en el bloque. NO usar artifacts para el SQL (lo probamos y le
+  resultó confuso/frágil). Guardar igualmente el `.sql` en `sql/`.
 
 ---
 
