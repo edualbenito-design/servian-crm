@@ -2,13 +2,16 @@ import { getClients } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { KanbanBoard, type BoardColumns } from "./KanbanBoard";
 import type { Client } from "@/lib/data";
-import { isOpenStage } from "@/lib/data";
+import { openIdleDays } from "@/lib/data";
 
 function buildInitialColumns(data: Client[]): BoardColumns {
   const columns: BoardColumns = {};
   for (let s = 1; s <= 9; s++) columns[String(s)] = [];
 
+  const now = new Date();
   for (const client of data) {
+    // A deal's "month" = when the client was captured (creation as fallback).
+    const capturedMonth = (client.capturedAt ?? client.createdAt ?? "").slice(0, 7);
     for (const project of client.projects) {
       columns[String(project.pipelineStage)].push({
         projectId: project.id,
@@ -18,24 +21,15 @@ function buildInitialColumns(data: Client[]): BoardColumns {
         clientName: client.name,
         propertyType: client.propertyType,
         assignedTo: client.assignedTo,
-        // Live funnel deal with nothing scheduled next → easy to let it go cold.
-        needsNextStep:
-          isOpenStage(project.pipelineStage) &&
-          (project.followUps?.length ?? 0) === 0,
+        capturedMonth,
+        // Days adrift: open funnel, no pending follow-up, no forward move.
+        // null = actively worked or already resolved.
+        idleDays: openIdleDays(project, now),
       });
     }
   }
 
   return columns;
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
 }
 
 export default async function PipelinePage() {
@@ -45,40 +39,14 @@ export default async function PipelinePage() {
   );
   const initialColumns = buildInitialColumns(clients);
 
-  const totalProjects = clients.reduce((n, c) => n + c.projects.length, 0);
-  const totalPipelineValue = clients.reduce(
-    (sum, c) => sum + c.projects.reduce((s, p) => s + p.budget, 0),
-    0
-  );
-  const needsNextStep = clients.reduce(
-    (n, c) =>
-      n +
-      c.projects.filter(
-        (p) => isOpenStage(p.pipelineStage) && (p.followUps?.length ?? 0) === 0
-      ).length,
-    0
-  );
-
   return (
     <div className="flex flex-col">
       {/* Page header */}
-      <div className="max-w-7xl mx-auto w-full px-6 pt-10 pb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-              Pipeline
-            </h1>
-            <p className="mt-1 text-sm text-(--text-secondary)">
-              {totalProjects} projects &middot;{" "}
-              {formatCurrency(totalPipelineValue)} total pipeline value
-              {needsNextStep > 0 && (
-                <span className="text-amber-500 font-medium">
-                  {" "}
-                  &middot; {needsNextStep} need a next step
-                </span>
-              )}
-            </p>
-          </div>
+      <div className="max-w-7xl mx-auto w-full px-6 pt-10 pb-4">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+            Pipeline
+          </h1>
           <div className="flex items-center gap-3 text-xs text-(--text-muted) flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-sky-500" />
@@ -100,7 +68,7 @@ export default async function PipelinePage() {
         </div>
       </div>
 
-      {/* Interactive Kanban board */}
+      {/* Interactive Kanban board (stats + month filter live inside) */}
       <KanbanBoard initialColumns={initialColumns} />
     </div>
   );

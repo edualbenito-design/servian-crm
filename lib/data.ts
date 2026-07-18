@@ -328,6 +328,9 @@ export interface Project {
   pipelineStage: PipelineStage;
   startDate: string;
   endDate?: string;
+  createdAt?: string; // row creation timestamp (fallback for "captured" grouping)
+  stageChangedAt?: string; // when the pipeline stage last moved (idle tracking)
+  closedAt?: string; // sealed when reaching an outcome stage 6/7/8/9 (real close time)
   activities: Activity[];
   // Delivery details
   contractor?: string; // external company handling the work
@@ -409,4 +412,38 @@ export function isCompletedStage(s: PipelineStage): boolean {
 // Live funnel: still being worked (New Lead → Negotiation).
 export function isOpenStage(s: PipelineStage): boolean {
   return s >= 1 && s <= 5;
+}
+
+// ── Idle / staleness thresholds ──────────────────────────────────────────────
+// A deal in the live funnel is "active" as long as someone is working it (a
+// pending follow-up scheduled). With no plan AND no forward movement for a
+// while, it goes stale (a gentle nudge) and — much later — cold (a candidate for
+// the month cleanup). We never force a close: an active deal keeps being nurtured.
+export const STALE_DAYS = 14; // amber nudge on the board
+export const COLD_DAYS = 90; // ~3 months → shows up in the Cleanup view
+
+// Whole days between a past timestamp/date and `now` (null if unparseable).
+export function daysSince(dateStr?: string, now: Date = new Date()): number | null {
+  if (!dateStr) return null;
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return null;
+  return Math.floor((now.getTime() - then) / 86400000);
+}
+
+// How long an open deal has sat with no plan and no forward movement. Returns
+// null when the deal isn't "adrift": resolved stage, or a follow-up is pending.
+// Uses stageChangedAt (last forward move); falls back to createdAt.
+export function openIdleDays(
+  project: {
+    pipelineStage: PipelineStage;
+    stageChangedAt?: string;
+    createdAt?: string;
+    followUps?: { status: string }[];
+  },
+  now: Date = new Date()
+): number | null {
+  if (!isOpenStage(project.pipelineStage)) return null;
+  const hasPending = (project.followUps ?? []).some((f) => f.status === "pending");
+  if (hasPending) return null; // still being worked → not adrift
+  return daysSince(project.stageChangedAt ?? project.createdAt, now);
 }

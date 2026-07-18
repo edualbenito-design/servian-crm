@@ -426,19 +426,43 @@ export async function updateProject(projectId: string, clientId: string, fields:
 
 export async function updatePipelineStage(projectId: string, stage: PipelineStage): Promise<void> {
   const db = serverClient();
-  const { error } = await db
-    .from("projects")
-    .update({ pipeline_stage: stage })
-    .eq("id", projectId);
 
-  if (error) throw new Error(error.message);
-
-  // Look up the project so we can write a readable timeline entry.
+  // Base lookup (always-present columns) for the timeline entry + revalidation.
   const { data: proj } = await db
     .from("projects")
     .select("name, client_id")
     .eq("id", projectId)
     .single();
+
+  // closed_at is sealed the FIRST time a deal reaches an outcome (6/7/8/9) and
+  // preserved while moving between outcomes; cleared only when reopened into the
+  // live funnel (1–5). Read the current value best-effort (column may not exist).
+  const { data: prev } = await db
+    .from("projects")
+    .select("closed_at")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  const nowIso = new Date().toISOString();
+  const isOutcome = stage >= 6 && stage <= 9;
+  const closedAt = isOutcome
+    ? ((prev as { closed_at?: string | null } | null)?.closed_at ?? nowIso)
+    : null;
+
+  // Stamp stage_changed_at on every move. Retry without the new columns if the
+  // migration hasn't been applied yet (§7.5, resilient — deploy before SQL).
+  let { error } = await db
+    .from("projects")
+    .update({ pipeline_stage: stage, stage_changed_at: nowIso, closed_at: closedAt })
+    .eq("id", projectId);
+  if (error) {
+    ({ error } = await db
+      .from("projects")
+      .update({ pipeline_stage: stage })
+      .eq("id", projectId));
+  }
+
+  if (error) throw new Error(error.message);
 
   if (proj) {
     await logActivity(

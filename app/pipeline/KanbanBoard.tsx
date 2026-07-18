@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DragDropContext,
   Droppable,
@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   PIPELINE_STAGES,
+  STALE_DAYS,
   type PipelineStage,
   type PropertyType,
   type Salesperson,
@@ -26,8 +27,11 @@ export type CardEntry = {
   clientName: string;
   propertyType: PropertyType;
   assignedTo: Salesperson;
-  // Open deal (stage 1–7) with no pending follow-up → nothing scheduled next.
-  needsNextStep: boolean;
+  // Month the client was captured (YYYY-MM) — drives the month filter.
+  capturedMonth: string;
+  // Days adrift: open funnel, no pending follow-up, no forward move.
+  // null = actively worked or already resolved.
+  idleDays: number | null;
 };
 
 export type BoardColumns = Record<string, CardEntry[]>;
@@ -118,6 +122,13 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+// "2026-07" → "July 2026" for the month picker.
+function monthLabel(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(y, (m || 1) - 1, 1);
+  return d.toLocaleDateString("en-AE", { month: "long", year: "numeric" });
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 interface KanbanBoardProps {
@@ -126,16 +137,51 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
   const [columns, setColumns] = useState<BoardColumns>(initialColumns);
+  const [monthBy, setMonthBy] = useState<string>(""); // "" = all months
   const router = useRouter();
 
-  const stages = Array.from(
-    { length: 9 },
-    (_, i) => String(i + 1)
-  );
+  const stages = Array.from({ length: 9 }, (_, i) => String(i + 1));
+
+  // Distinct capture months present in the data (newest first).
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    for (const list of Object.values(columns)) {
+      for (const c of list) if (c.capturedMonth) set.add(c.capturedMonth);
+    }
+    return Array.from(set).sort().reverse();
+  }, [columns]);
+
+  // What the board renders: full data, optionally narrowed to one capture month.
+  const displayColumns = useMemo<BoardColumns>(() => {
+    if (!monthBy) return columns;
+    const out: BoardColumns = {};
+    for (const [stage, list] of Object.entries(columns)) {
+      out[stage] = list.filter((c) => c.capturedMonth === monthBy);
+    }
+    return out;
+  }, [columns, monthBy]);
+
+  // Stats reflect exactly what's on screen (react to the month filter).
+  const stats = useMemo(() => {
+    let projects = 0;
+    let value = 0;
+    let needsNextStep = 0;
+    let stale = 0;
+    for (const list of Object.values(displayColumns)) {
+      for (const c of list) {
+        projects++;
+        value += c.budget;
+        if (c.idleDays != null) {
+          needsNextStep++;
+          if (c.idleDays >= STALE_DAYS) stale++;
+        }
+      }
+    }
+    return { projects, value, needsNextStep, stale };
+  }, [displayColumns]);
 
   function onDragEnd(result: DropResult) {
     const { source, destination } = result;
-
     if (!destination) return;
     if (
       source.droppableId === destination.droppableId &&
@@ -143,174 +189,247 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
     )
       return;
 
-    let movedProjectId: string | null = null;
+    // Resolve the dragged card from the *displayed* list (may be filtered).
+    const moved = displayColumns[source.droppableId]?.[source.index];
+    if (!moved) return;
+    const movedProjectId = moved.projectId;
+    const crossColumn = source.droppableId !== destination.droppableId;
 
+    // Card order isn't persisted, so we map moves back onto the full columns by
+    // projectId — this stays correct whether or not a month filter is active.
     setColumns((prev) => {
       const next = { ...prev };
-      const srcCards = [...prev[source.droppableId]];
-      const [moved] = srcCards.splice(source.index, 1);
-      movedProjectId = moved.projectId;
+      const srcFull = prev[source.droppableId].filter(
+        (c) => c.projectId !== movedProjectId
+      );
+      const destBase = crossColumn ? [...prev[destination.droppableId]] : srcFull;
 
-      if (source.droppableId === destination.droppableId) {
-        srcCards.splice(destination.index, 0, moved);
-        next[source.droppableId] = srcCards;
+      // Insertion point = the displayed card currently at the destination index.
+      const destDisplay = displayColumns[destination.droppableId].filter(
+        (c) => c.projectId !== movedProjectId
+      );
+      let insertAt: number;
+      if (destination.index >= destDisplay.length) {
+        insertAt = destBase.length;
       } else {
-        const dstCards = [...prev[destination.droppableId]];
-        dstCards.splice(destination.index, 0, moved);
-        next[source.droppableId] = srcCards;
-        next[destination.droppableId] = dstCards;
+        const anchorId = destDisplay[destination.index].projectId;
+        const i = destBase.findIndex((c) => c.projectId === anchorId);
+        insertAt = i < 0 ? destBase.length : i;
       }
 
+      const destFull = [...destBase];
+      destFull.splice(insertAt, 0, moved);
+      if (crossColumn) next[source.droppableId] = srcFull;
+      next[destination.droppableId] = destFull;
       return next;
     });
 
-    if (movedProjectId && source.droppableId !== destination.droppableId) {
-      const stage = Number(destination.droppableId) as PipelineStage;
-      updatePipelineStage(movedProjectId, stage);
+    if (crossColumn) {
+      updatePipelineStage(
+        movedProjectId,
+        Number(destination.droppableId) as PipelineStage
+      );
     }
   }
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className="overflow-x-auto px-6 pb-10">
-        <div className="flex gap-4" style={{ minWidth: "max-content" }}>
-          {stages.map((stageId) => {
-            const stage = Number(stageId) as PipelineStage;
-            const stageName = PIPELINE_STAGES[stage];
-            const cards = columns[stageId];
-            const columnValue = cards.reduce((s, c) => s + c.budget, 0);
+    <div className="flex flex-col">
+      {/* Stats + month filter — both reflect the current view */}
+      <div className="max-w-7xl mx-auto w-full px-6 pb-5 flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-sm text-(--text-secondary)">
+          {stats.projects} projects &middot; {formatCurrency(stats.value)} total
+          pipeline value
+          {stats.needsNextStep > 0 && (
+            <span className="text-amber-500 font-medium">
+              {" "}
+              &middot; {stats.needsNextStep} need a next step
+            </span>
+          )}
+          {stats.stale > 0 && (
+            <span className="text-red-500 font-medium">
+              {" "}
+              &middot; {stats.stale} stale ({STALE_DAYS}d+)
+            </span>
+          )}
+        </p>
 
-            return (
-              <div
-                key={stageId}
-                className={`w-[272px] shrink-0 flex flex-col bg-(--card) border-t-2 border border-(--border) rounded-xl ${stageTopBorder[stage]}`}
-              >
-                {/* Column header */}
-                <div className="px-4 pt-4 pb-3 border-b border-(--border)">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded ${stageBadgeColor[stage]}`}
-                      >
-                        {stage}
-                      </span>
-                      <h2
-                        className={`text-xs font-semibold ${stageHeaderColor[stage]}`}
-                      >
-                        {stageName}
-                      </h2>
-                    </div>
-                    <span className="text-xs font-medium text-(--text-muted) bg-(--surface) rounded-full px-2 py-0.5">
-                      {cards.length}
-                    </span>
-                  </div>
-                  {columnValue > 0 && (
-                    <p className="text-[11px] font-mono text-(--text-muted)">
-                      {formatCurrency(columnValue)}
-                    </p>
-                  )}
-                </div>
-
-                {/* Droppable card list */}
-                <Droppable droppableId={stageId}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`flex flex-col gap-2.5 p-3 flex-1 min-h-[120px] rounded-b-xl transition-colors duration-150 ${
-                        snapshot.isDraggingOver
-                          ? "bg-(--accent)/[0.06]"
-                          : ""
-                      }`}
-                    >
-                      {cards.length === 0 && !snapshot.isDraggingOver && (
-                        <div className="flex-1 flex items-center justify-center min-h-[72px]">
-                          <p className="text-xs text-(--text-muted) italic select-none">
-                            No projects
-                          </p>
-                        </div>
-                      )}
-
-                      {cards.map((card, index) => (
-                        <Draggable
-                          key={card.projectId}
-                          draggableId={card.projectId}
-                          index={index}
-                        >
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              onClick={() =>
-                                router.push(`/clients/${card.clientId}`)
-                              }
-                              className={`bg-(--surface) border border-(--border) rounded-lg p-3.5 cursor-pointer active:cursor-grabbing select-none transition-shadow ${
-                                snapshot.isDragging
-                                  ? "shadow-2xl shadow-black/70 border-(--accent)/50 ring-1 ring-(--accent)/30"
-                                  : "hover:border-(--accent)/35 hover:shadow-md hover:shadow-black/30"
-                              }`}
-                            >
-                              {/* Card header: client name */}
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <p className="text-[11px] font-medium text-(--text-muted) leading-tight">
-                                  {card.clientName}
-                                </p>
-                                {card.needsNextStep && (
-                                  <span
-                                    title="No follow-up scheduled — add a next step"
-                                    className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap"
-                                  >
-                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-                                    </svg>
-                                    No next step
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Project name */}
-                              <p className="text-sm font-semibold text-(--text-primary) leading-snug mb-3">
-                                {card.projectName}
-                              </p>
-
-                              {/* Budget + property badge */}
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold font-mono text-(--accent)">
-                                  {formatCurrency(card.budget)}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${propertyTypeColor[card.propertyType]}`}
-                                >
-                                  {propertyTypeLabel[card.propertyType]}
-                                </span>
-                              </div>
-
-                              {/* Assignee */}
-                              <div className="mt-2.5 pt-2.5 border-t border-(--border) flex items-center gap-1.5">
-                                <div
-                                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0 select-none ${salesAvatarColor[card.assignedTo]}`}
-                                >
-                                  {salesInitials(card.assignedTo)}
-                                </div>
-                                <span className="text-[10px] text-(--text-muted) truncate">
-                                  {card.assignedTo}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
-            );
-          })}
-        </div>
+        {months.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-(--text-muted)">Captured</label>
+            <select
+              value={monthBy}
+              onChange={(e) => setMonthBy(e.target.value)}
+              className="text-sm rounded-lg border border-(--border) bg-(--surface) px-2.5 py-1.5 text-(--text-primary)"
+            >
+              <option value="">All months</option>
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {monthLabel(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
-    </DragDropContext>
+
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="overflow-x-auto px-6 pb-10">
+          <div className="flex gap-4" style={{ minWidth: "max-content" }}>
+            {stages.map((stageId) => {
+              const stage = Number(stageId) as PipelineStage;
+              const stageName = PIPELINE_STAGES[stage];
+              const cards = displayColumns[stageId] ?? [];
+              const columnValue = cards.reduce((s, c) => s + c.budget, 0);
+
+              return (
+                <div
+                  key={stageId}
+                  className={`w-[272px] shrink-0 flex flex-col bg-(--card) border-t-2 border border-(--border) rounded-xl ${stageTopBorder[stage]}`}
+                >
+                  {/* Column header */}
+                  <div className="px-4 pt-4 pb-3 border-b border-(--border)">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded ${stageBadgeColor[stage]}`}
+                        >
+                          {stage}
+                        </span>
+                        <h2
+                          className={`text-xs font-semibold ${stageHeaderColor[stage]}`}
+                        >
+                          {stageName}
+                        </h2>
+                      </div>
+                      <span className="text-xs font-medium text-(--text-muted) bg-(--surface) rounded-full px-2 py-0.5">
+                        {cards.length}
+                      </span>
+                    </div>
+                    {columnValue > 0 && (
+                      <p className="text-[11px] font-mono text-(--text-muted)">
+                        {formatCurrency(columnValue)}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Droppable card list */}
+                  <Droppable droppableId={stageId}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`flex flex-col gap-2.5 p-3 flex-1 min-h-[120px] rounded-b-xl transition-colors duration-150 ${
+                          snapshot.isDraggingOver ? "bg-(--accent)/[0.06]" : ""
+                        }`}
+                      >
+                        {cards.length === 0 && !snapshot.isDraggingOver && (
+                          <div className="flex-1 flex items-center justify-center min-h-[72px]">
+                            <p className="text-xs text-(--text-muted) italic select-none">
+                              No projects
+                            </p>
+                          </div>
+                        )}
+
+                        {cards.map((card, index) => {
+                          const stale =
+                            card.idleDays != null && card.idleDays >= STALE_DAYS;
+                          const needsNextStep = card.idleDays != null;
+
+                          return (
+                            <Draggable
+                              key={card.projectId}
+                              draggableId={card.projectId}
+                              index={index}
+                            >
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  onClick={() =>
+                                    router.push(`/clients/${card.clientId}`)
+                                  }
+                                  className={`bg-(--surface) border border-(--border) rounded-lg p-3.5 cursor-pointer active:cursor-grabbing select-none transition-shadow ${
+                                    snapshot.isDragging
+                                      ? "shadow-2xl shadow-black/70 border-(--accent)/50 ring-1 ring-(--accent)/30"
+                                      : "hover:border-(--accent)/35 hover:shadow-md hover:shadow-black/30"
+                                  }`}
+                                >
+                                  {/* Card header: client name + status chip */}
+                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                    <p className="text-[11px] font-medium text-(--text-muted) leading-tight">
+                                      {card.clientName}
+                                    </p>
+                                    {stale ? (
+                                      <span
+                                        title={`Open ${card.idleDays} days with no next step — nudge it or resolve it`}
+                                        className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap"
+                                      >
+                                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                          <circle cx="12" cy="12" r="10" />
+                                          <path d="M12 6v6l4 2" />
+                                        </svg>
+                                        Stale · {card.idleDays}d
+                                      </span>
+                                    ) : (
+                                      needsNextStep && (
+                                        <span
+                                          title="No follow-up scheduled — add a next step"
+                                          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap"
+                                        >
+                                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                                          </svg>
+                                          No next step
+                                        </span>
+                                      )
+                                    )}
+                                  </div>
+
+                                  {/* Project name */}
+                                  <p className="text-sm font-semibold text-(--text-primary) leading-snug mb-3">
+                                    {card.projectName}
+                                  </p>
+
+                                  {/* Budget + property badge */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold font-mono text-(--accent)">
+                                      {formatCurrency(card.budget)}
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${propertyTypeColor[card.propertyType]}`}
+                                    >
+                                      {propertyTypeLabel[card.propertyType]}
+                                    </span>
+                                  </div>
+
+                                  {/* Assignee */}
+                                  <div className="mt-2.5 pt-2.5 border-t border-(--border) flex items-center gap-1.5">
+                                    <div
+                                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0 select-none ${salesAvatarColor[card.assignedTo]}`}
+                                    >
+                                      {salesInitials(card.assignedTo)}
+                                    </div>
+                                    <span className="text-[10px] text-(--text-muted) truncate">
+                                      {card.assignedTo}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          );
+                        })}
+
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </DragDropContext>
+    </div>
   );
 }

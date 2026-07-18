@@ -141,6 +141,8 @@ type DbProject = {
   start_date: string;
   end_date: string | null;
   created_at: string;
+  stage_changed_at?: string | null;
+  closed_at?: string | null;
   contractor: string | null;
   team_members: string[] | null;
   suppliers: { name: string; material: string }[] | null;
@@ -193,6 +195,9 @@ function toProject(
     pipelineStage: p.pipeline_stage as PipelineStage,
     startDate: p.start_date,
     endDate: p.end_date ?? undefined,
+    createdAt: p.created_at ?? undefined,
+    stageChangedAt: p.stage_changed_at ?? undefined,
+    closedAt: p.closed_at ?? undefined,
     activities,
     contractor: p.contractor ?? undefined,
     teamMembers: p.team_members ?? [],
