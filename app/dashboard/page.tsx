@@ -1,4 +1,4 @@
-import { getClients, getQuoteStats, getMonthlyMovement } from "@/lib/db";
+import { getClients, getQuoteStats, getMonthlyMovement, getReportMonths, getMonthlyReport } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import {
   computeKpis,
@@ -14,6 +14,16 @@ import { SalesDashboard } from "./SalesDashboard";
 import { ConversionCard } from "./ConversionCard";
 import { ThisMonthCard } from "./ThisMonthCard";
 import { CloseTimeCard } from "./CloseTimeCard";
+import { MonthPicker } from "./MonthPicker";
+import { MonthlyReportView } from "./MonthlyReportView";
+
+function monthLabel(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, 1).toLocaleDateString("en-AE", {
+    month: "long",
+    year: "numeric",
+  });
+}
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -61,8 +71,36 @@ function Card({
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: PageProps<"/dashboard">) {
   const profile = await getCurrentProfile();
+  const sp = await props.searchParams;
+  const month = typeof sp?.month === "string" ? sp.month : "";
+  const scope = profile && !profile.isManager ? profile.name : undefined;
+
+  // Options for the month picker (capture months present in scope).
+  const reportMonths = await getReportMonths(scope);
+
+  // A month is selected → show that month's activity report (both roles).
+  // Each metric counts by its own date; the live funnel/pipeline stay in "All time".
+  if (month) {
+    const report = await getMonthlyReport(month, scope);
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+              Dashboard
+            </h1>
+            <p className="mt-1 text-sm text-(--text-secondary)">
+              What happened in {monthLabel(month)}
+            </p>
+          </div>
+          <MonthPicker months={reportMonths} value={month} />
+        </div>
+        <MonthlyReportView report={report} />
+      </div>
+    );
+  }
 
   // Commercials get their own personal dashboard (only their data).
   if (profile && !profile.isManager) {
@@ -75,6 +113,7 @@ export default async function DashboardPage() {
         name={profile.name}
         quoteStats={myQuoteStats}
         movement={myMovement}
+        monthPicker={<MonthPicker months={reportMonths} value="" />}
       />
     );
   }
@@ -102,13 +141,16 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-          Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-(--text-secondary)">
-          Business overview across all clients and projects
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-(--text-secondary)">
+            Business overview across all clients and projects
+          </p>
+        </div>
+        <MonthPicker months={reportMonths} value="" />
       </div>
 
       {/* KPIs */}

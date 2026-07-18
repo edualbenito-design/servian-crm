@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { Client } from "@/lib/data";
 import { followUpState, PIPELINE_STAGES } from "@/lib/data";
 import { pipelineFunnel, conversionFunnel, closeTimes } from "@/lib/analytics";
@@ -37,11 +38,13 @@ export function SalesDashboard({
   name,
   quoteStats,
   movement,
+  monthPicker,
 }: {
   clients: Client[];
   name: string;
   quoteStats: QuoteStats;
   movement: MonthMovement[];
+  monthPicker?: ReactNode;
 }) {
   const projects = clients.flatMap((c) => c.projects);
   const activeProjects = projects.filter((p) => p.status === "active").length;
@@ -118,13 +121,16 @@ export function SalesDashboard({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-          My Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-(--text-secondary)">
-          {name} — your clients, projects and follow-ups
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+            My Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-(--text-secondary)">
+            {name} — your clients, projects and follow-ups
+          </p>
+        </div>
+        {monthPicker}
       </div>
 
       {/* KPIs */}

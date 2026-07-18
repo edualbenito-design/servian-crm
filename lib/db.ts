@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, paymentSummary, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
+import { quoteTotals, paymentSummary, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
@@ -1489,4 +1489,192 @@ export async function getProjectPaymentSummaries(): Promise<Record<string, Proje
     };
   }
   return out;
+}
+
+// ── Dashboard month filter: "what happened in month M" ─────────────────────────
+// Activity-based: each metric uses its OWN date — leads by capture, deals by the
+// month they were won/lost (closed_at), invoices by invoiced_at, money by paid_on,
+// overdue by due date. The live funnel / pipeline value are "now" and have no
+// month, so they stay out of this report.
+
+// Distinct capture months present (newest first) — the picker's options.
+export async function getReportMonths(assignedTo?: string): Promise<string[]> {
+  const db = serverClient();
+  let q = db.from("clients").select("captured_at, created_at, deleted_at");
+  if (assignedTo) q = q.eq("assigned_to", assignedTo);
+  const { data } = await q;
+  const set = new Set<string>();
+  for (const c of (data as { captured_at: string | null; created_at: string | null; deleted_at: string | null }[] | null) ?? []) {
+    if (c.deleted_at) continue;
+    const m = (c.captured_at ?? c.created_at ?? "").slice(0, 7);
+    if (m) set.add(m);
+  }
+  return Array.from(set).sort().reverse();
+}
+
+export interface CommercialMonthRow {
+  name: string;
+  leads: number;
+  won: number;
+  wonValue: number;
+  invoiced: number;
+  collected: number;
+}
+
+export interface MonthlyReport {
+  month: string; // YYYY-MM
+  leads: number;
+  leadsBySource: Record<LeadSource, number>;
+  won: number;
+  wonValue: number;
+  lost: number; // lost + ghosting
+  invoiced: number; // AED billed (tax invoices issued this month)
+  invoicedCount: number;
+  collected: number; // AED received (payments dated this month)
+  overdue: number; // follow-ups that fell due this month and are still pending
+  avgCloseDays: number | null; // for deals closed this month
+  closedSamples: number;
+  byCommercial: CommercialMonthRow[];
+}
+
+export async function getMonthlyReport(month: string, assignedTo?: string): Promise<MonthlyReport> {
+  const db = serverClient();
+  const empty: MonthlyReport = {
+    month,
+    leads: 0,
+    leadsBySource: { referral: 0, instagram: 0, other: 0 },
+    won: 0,
+    wonValue: 0,
+    lost: 0,
+    invoiced: 0,
+    invoicedCount: 0,
+    collected: 0,
+    overdue: 0,
+    avgCloseDays: null,
+    closedSamples: 0,
+    byCommercial: [],
+  };
+
+  // Clients in scope + their projects (for leads, wins/losses, close time).
+  let cq = db
+    .from("clients")
+    .select(
+      "id, assigned_to, lead_source, captured_at, created_at, deleted_at, projects(id, budget, pipeline_stage, closed_at, deleted_at)"
+    );
+  if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
+  const { data: clientsRaw } = await cq;
+  if (!clientsRaw) return empty;
+
+  type PRow = { id: string; budget: number | null; pipeline_stage: number | null; closed_at: string | null; deleted_at: string | null };
+  type CRow = { id: string; assigned_to: string; lead_source: string | null; captured_at: string | null; created_at: string | null; deleted_at: string | null; projects: PRow[] | null };
+
+  const clients = (clientsRaw as CRow[]).filter((c) => !c.deleted_at);
+  const clientIds = new Set(clients.map((c) => c.id));
+  const clientOf = new Map<string, CRow>(); // clientId → row
+  for (const c of clients) clientOf.set(c.id, c);
+
+  // Per-commercial accumulator.
+  const rows = new Map<string, CommercialMonthRow>();
+  const row = (name: string) => {
+    let r = rows.get(name);
+    if (!r) {
+      r = { name, leads: 0, won: 0, wonValue: 0, invoiced: 0, collected: 0 };
+      rows.set(name, r);
+    }
+    return r;
+  };
+
+  const report: MonthlyReport = { ...empty, leadsBySource: { referral: 0, instagram: 0, other: 0 } };
+  const closeDays: number[] = [];
+
+  for (const c of clients) {
+    // Leads captured this month.
+    if ((c.captured_at ?? c.created_at ?? "").slice(0, 7) === month) {
+      report.leads++;
+      const src = (c.lead_source as LeadSource) || "other";
+      if (src in report.leadsBySource) report.leadsBySource[src]++;
+      else report.leadsBySource.other++;
+      row(c.assigned_to).leads++;
+    }
+    // Deals that reached an outcome this month (by closed_at).
+    for (const p of c.projects ?? []) {
+      if (p.deleted_at || !p.closed_at) continue;
+      if (p.closed_at.slice(0, 7) !== month) continue;
+      const stage = (p.pipeline_stage ?? 1) as PipelineStage;
+      if (isWonStage(stage)) {
+        report.won++;
+        report.wonValue += p.budget ?? 0;
+        const r = row(c.assigned_to);
+        r.won++;
+        r.wonValue += p.budget ?? 0;
+      } else if (isDeadStage(stage)) {
+        report.lost++;
+      }
+      // Time to close (capture → this outcome).
+      const d = daysSince(c.captured_at ?? c.created_at ?? undefined, new Date(p.closed_at));
+      if (d != null && d >= 0) closeDays.push(d);
+    }
+  }
+  report.avgCloseDays = closeDays.length
+    ? Math.round(closeDays.reduce((s, d) => s + d, 0) / closeDays.length)
+    : null;
+  report.closedSamples = closeDays.length;
+
+  // Invoiced this month = tax invoices issued (invoiced_at) on accepted quotes.
+  {
+    type QInv = { project_id: string; client_id: string; items: QuoteItem[] | null; vat_rate: number; invoiced_at: string | null; discount_pct?: number | null };
+    const QCOLS = "project_id, client_id, items, vat_rate, invoiced_at";
+    let quotes: QInv[] | null = null;
+    const r = await db.from("quotes").select(`${QCOLS}, discount_pct`).not("invoiced_at", "is", null);
+    quotes = r.data as unknown as QInv[] | null;
+    if (r.error) {
+      const r2 = await db.from("quotes").select(QCOLS).not("invoiced_at", "is", null);
+      quotes = r2.data as unknown as QInv[] | null;
+    }
+    for (const q of quotes ?? []) {
+      if (!clientIds.has(q.client_id)) continue;
+      if ((q.invoiced_at ?? "").slice(0, 7) !== month) continue;
+      const total = quoteTotals({ items: q.items ?? [], vatRate: q.vat_rate, discountPct: q.discount_pct ?? undefined }).total;
+      report.invoiced += total;
+      report.invoicedCount++;
+      const c = clientOf.get(q.client_id);
+      if (c) row(c.assigned_to).invoiced += total;
+    }
+  }
+
+  // Collected this month = payments dated (paid_on) in the month.
+  {
+    type PayRow = { client_id: string | null; amount: number; paid_on: string | null };
+    let pays: PayRow[] | null = null;
+    const r = await db.from("payments").select("client_id, amount, paid_on");
+    pays = r.data as unknown as PayRow[] | null;
+    for (const p of pays ?? []) {
+      if (!p.paid_on || p.paid_on.slice(0, 7) !== month) continue;
+      if (p.client_id && !clientIds.has(p.client_id)) continue;
+      if (!p.client_id && assignedTo) continue; // can't attribute → skip when scoped
+      report.collected += Number(p.amount) || 0;
+      if (p.client_id) {
+        const c = clientOf.get(p.client_id);
+        if (c) row(c.assigned_to).collected += Number(p.amount) || 0;
+      }
+    }
+  }
+
+  // Overdue = follow-ups due in the month, still pending and already past.
+  if (clientIds.size > 0) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const { data: fus } = await db
+      .from("follow_ups")
+      .select("client_id, due_date, status")
+      .in("client_id", Array.from(clientIds))
+      .eq("status", "pending");
+    for (const f of (fus as { client_id: string; due_date: string | null; status: string }[] | null) ?? []) {
+      if (!f.due_date || f.due_date.slice(0, 7) !== month) continue;
+      if (f.due_date >= todayStr) continue; // not overdue yet
+      report.overdue++;
+    }
+  }
+
+  report.byCommercial = Array.from(rows.values()).sort((a, b) => b.wonValue - a.wonValue);
+  return report;
 }
