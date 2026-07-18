@@ -74,16 +74,33 @@
 - **Fechas captado vs cerrado** (punto 3, base): columnas `stage_changed_at`/`closed_at`
   selladas por `updatePipelineStage` (closed_at solo la 1ª vez que cierra; se limpia al
   reabrir a 1–5). Mapeadas en `Project` (`stageChangedAt`/`closedAt`/`createdAt`).
+- **Tiempo medio de cierre** (punto 3): `closeTimes()` en `lib/analytics.ts` = días
+  captación→desenlace usando `closedAt`, separado Won vs Lost/Ghosting. Tarjeta
+  `CloseTimeCard` en el Dashboard de managers Y de comerciales. (El SQL de arriba
+  backfilla `closed_at`=created_at para deals ya cerrados; hasta correrlo, los cierres
+  antiguos dan 0 días.)
+- **Estado de pago en Completed** (punto 4): `getProjectPaymentSummaries()` en `lib/db.ts`
+  (comprometido = quotes aceptadas vs pagos, por proyecto). El Pipeline muestra en las
+  tarjetas de la columna **Completed** un badge verde "Paid" o ámbar "AED X pending"
+  para que el comercial persiga el saldo. (No se tocó Monthly movement; opción futura.)
 
-### 🔜 A DESARROLLAR (queda del pedido 2026-07-17)
-3. **Fechas captado vs cerrado — resto.** Columnas ya existen (arriba). Falta EXPLOTARLAS:
-   usar `closed_at` en `getMonthlyMovement` (foto mensual más robusta que la fecha del
-   log de etapa) y mostrar **tiempo medio de cierre real** (closed_at − captured_at).
-4. **En Completed: estado de pago.** Sobre los proyectos completados, indicar si está
-   TODO pagado o queda saldo, para que el comercial persiga el cobro. Datos ya
-   disponibles (`paymentSummary` / Collections). Mostrar en la tarjeta de la columna
-   Completed del pipeline y/o en la fila "Completed" de Monthly movement (badge
-   "paid" / "AED X pending").
+### 🔜 A DESARROLLAR (siguiente)
+- **Filtro global por mes en el Dashboard.** Hoy solo la tarjeta "This month" filtra por
+  mes; Eduardo quiere un selector ARRIBA que filtre TODO el dashboard. DECISIÓN de
+  Eduardo (2026-07-18): modelo **"lo que pasó en junio" (actividad)** — cada dato usa su
+  propia fecha (leads captados, facturas emitidas, cobros, follow-ups vencidos… en ese
+  mes). OJO: el embudo por etapa y el pipeline value son "foto de ahora" y no tienen mes
+  → dejarlos globales o fuera del filtro. Quitar filtro = todo el histórico. Patrón de
+  selector como el del Pipeline/ClientsTable. Aquí probablemente conviene mover cálculos
+  a consultas por fecha (facturas por `invoiced_at`, cobros por `paid_on`, outcomes por
+  `closed_at`, overdue por `due_date`) en vez de derivar de `clients` en memoria.
+- (Menor) Usar `closed_at` en `getMonthlyMovement` para una foto mensual más robusta que
+  el parseo del log de cambios de etapa. Encaja bien junto al filtro del Dashboard.
+
+### 📋 Preferencia de Eduardo (2026-07-18)
+- **SQL siempre con botón de copiar:** cuando una feature necesite SQL, entregarlo como
+  **artifact con botón copiar** (además de guardar el `.sql` en `sql/`), para copia-pega
+  sin fallos. No basta el bloque de código en el chat.
 
 ---
 
