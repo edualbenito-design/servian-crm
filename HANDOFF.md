@@ -47,29 +47,38 @@
 - `sql/2026-07-17-quote-status-alternative-lost.sql` — amplía `quotes_status_check`.
 - `sql/2026-07-17-quote-discount.sql` — columnas `discount_pct`/`discount_reason`.
 - `sql/2026-07-17-pipeline-9-stages.sql` — check `pipeline_stage` 1..9 + remapea el
-  viejo stage 8 (Completed) → 7. **(No hay SQL pendiente.)**
+  viejo stage 8 (Completed) → 7.
 
-### 🔜 A DESARROLLAR (pedido por Eduardo 2026-07-17 — siguiente sesión)
-1. **Filtro por mes en el Pipeline.** Al entrar al tablero, poder ver la foto de un
-   mes concreto (qué hay en cada etapa ese mes) — mismo patrón que el filtro por mes
-   de la lista de clientes / Collections. Definir "mes del deal" = mes de **captación**
-   del cliente (`clients.captured_at`) — recomendado — o de creación del proyecto.
-2. **Cierre forzado / que no queden deals colgados.** Objetivo de negocio: que al
-   pasar los meses, todo lo de un mes (ej. marzo) acabe SOLO en **Win / Lost /
-   Ghosting**; que no quede nada "por cotizar / por empezar / pendiente". Mecanismo a
-   diseñar (proponer a Eduardo antes de construir):
-   - Detección de deals **estancados** (llevan X tiempo en una etapa del funnel sin
-     avanzar ni follow-up) → aviso para resolverlos.
-   - Vista/ritual de **"cierre de mes"**: listar los deals abiertos de meses anteriores
-     y forzar su categorización a un desenlace.
-   - (Opción) auto-sugerir **Ghosting** tras N follow-ups sin respuesta.
-3. **Fechas captado vs cerrado.** Un lead captado en marzo puede cerrarse meses
-   después. Guardar la fecha de captación (ya existe `captured_at`) Y una fecha de
-   **cierre/outcome** del proyecto (nueva, p.ej. `closed_at`, sellada al llegar a
-   Won/Completed/Lost/Ghosting). Permite tiempo medio de cierre real y que la foto
-   mensual distinga "entró en X" vs "se cerró en Y". (Hoy `getMonthlyMovement` ya
-   separa entered=created_at de outcomes=fecha del cambio de etapa, pero un `closed_at`
-   explícito es más robusto.)
+### 🗄️ SQL PENDIENTE (2026-07-18 — Eduardo debe correrlo)
+- **`sql/2026-07-18-project-stage-dates.sql`** — añade `projects.stage_changed_at` y
+  `projects.closed_at` (+ backfill). El código ya está desplegado y es RESILIENTE
+  (funciona sin la columna, cae a `created_at`); correrlo hace exactas las fechas de
+  inactividad y de cierre. Sin él, la vista Cleanup detecta "frío" por `created_at`.
+
+### ✅ Hecho 2026-07-18 (desplegado; falta solo correr el SQL de arriba)
+- **Filtro por mes en el Pipeline** (punto 1): selector "Captured" arriba del Kanban;
+  columnas, contadores y valor se recalculan al vuelo. Mes = captación del cliente
+  (`capturedAt ?? createdAt`). Drag&drop mapea por `projectId` → correcto con filtro.
+- **Detección de estancados** (punto 2a): helper `openIdleDays` en `lib/data.ts`
+  (`STALE_DAYS=14`). Chip en la tarjeta: ámbar "No next step" (abierto sin follow-up
+  pendiente) que escala a rojo "Stale · Nd" a los 14 días adrift. Deal con follow-up
+  pendiente NUNCA se marca (activo).
+- **Vista "Cleanup"** (punto 2b, `/pipeline/cleanup` + `getColdDeals`): lista los deals
+  ABIERTOS (1–5) genuinamente fríos = sin follow-up pendiente y sin "toque" (cambio de
+  etapa, follow-up completado, o actividad registrada) en `COLD_DAYS=90`. Agrupados por
+  mes de captación (más viejo primero). Por deal: **Reactivate** (agenda follow-up →
+  vuelve a activo), **→ Ghosting**, **→ Lost**. NADA se fuerza; los deals activos no
+  salen. Enlace "Cleanup" con badge de conteo en la cabecera del Pipeline.
+  ⚠️ DECISIÓN de Eduardo: NO forzar categorización; solo sacar a la luz los abandonados
+  para limpiarlos poco a poco. Un deal con follow-ups/actualizaciones sigue activo.
+- **Fechas captado vs cerrado** (punto 3, base): columnas `stage_changed_at`/`closed_at`
+  selladas por `updatePipelineStage` (closed_at solo la 1ª vez que cierra; se limpia al
+  reabrir a 1–5). Mapeadas en `Project` (`stageChangedAt`/`closedAt`/`createdAt`).
+
+### 🔜 A DESARROLLAR (queda del pedido 2026-07-17)
+3. **Fechas captado vs cerrado — resto.** Columnas ya existen (arriba). Falta EXPLOTARLAS:
+   usar `closed_at` en `getMonthlyMovement` (foto mensual más robusta que la fecha del
+   log de etapa) y mostrar **tiempo medio de cierre real** (closed_at − captured_at).
 4. **En Completed: estado de pago.** Sobre los proyectos completados, indicar si está
    TODO pagado o queda saldo, para que el comercial persiga el cobro. Datos ya
    disponibles (`paymentSummary` / Collections). Mostrar en la tarjeta de la columna
