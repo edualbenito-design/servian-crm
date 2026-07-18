@@ -129,7 +129,7 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
   const router = useRouter();
 
   const stages = Array.from(
-    { length: 8 },
+    { length: 9 },
     (_, i) => String(i + 1)
   );
 
