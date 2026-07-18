@@ -12,7 +12,7 @@ update projects
  where stage_changed_at is null;
 
 -- Seal closed_at for deals already in an outcome stage
--- (6 Won—On site, 7 Completed, 8 Lost, 9 Ghosting). No better timestamp exists
+-- (6 Won on site, 7 Completed, 8 Lost, 9 Ghosting). No better timestamp exists
 -- historically, so use created_at as a best effort.
 update projects
    set closed_at = coalesce(closed_at, created_at)
