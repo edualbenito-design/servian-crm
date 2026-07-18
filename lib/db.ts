@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage } from "./data";
+import { quoteTotals, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
@@ -1241,4 +1241,189 @@ export async function getDocuments(): Promise<CompanyDocument[]> {
     });
   }
   return docs;
+}
+
+// ── Cleanup: cold open deals ───────────────────────────────────────────────────
+// Deals stuck in the live funnel (stages 1–5) that have gone genuinely cold:
+// no pending follow-up AND no "touch" (stage move, completed follow-up, or logged
+// activity) in ~COLD_DAYS. Deals still being worked are excluded — we never force
+// a close, we just surface the abandoned ones for the month cleanup. Grouped by
+// the client's capture month (oldest first) so old months can be cleared out.
+
+export interface ColdDeal {
+  clientId: string;
+  clientName: string;
+  projectId: string;
+  projectName: string;
+  budget: number;
+  assignedTo: Salesperson;
+  stage: PipelineStage;
+  capturedMonth: string; // YYYY-MM (capture date, or creation as fallback)
+  idleDays: number; // days since the last touch
+  lastTouch: string; // ISO timestamp of the last touch
+}
+
+export interface ColdMonthGroup {
+  month: string; // YYYY-MM
+  deals: ColdDeal[];
+}
+
+export async function getColdDeals(assignedTo?: string): Promise<ColdMonthGroup[]> {
+  const db = serverClient();
+
+  // Clients in scope + their open projects (with the idle-tracking columns).
+  // Retry without stage_changed_at if the migration hasn't run yet (§7.5): the
+  // idle math then falls back to each project's created_at.
+  const withStage =
+    "id, name, assigned_to, captured_at, created_at, deleted_at, projects(id, name, budget, pipeline_stage, stage_changed_at, created_at, deleted_at)";
+  const withoutStage =
+    "id, name, assigned_to, captured_at, created_at, deleted_at, projects(id, name, budget, pipeline_stage, created_at, deleted_at)";
+  const run = (cols: string) => {
+    let q = db.from("clients").select(cols);
+    if (assignedTo) q = q.eq("assigned_to", assignedTo);
+    return q;
+  };
+  let { data: clientsRaw, error } = await run(withStage);
+  if (error) ({ data: clientsRaw, error } = await run(withoutStage));
+  if (error || !clientsRaw) return [];
+
+  type PRow = {
+    id: string;
+    name: string;
+    budget: number | null;
+    pipeline_stage: number | null;
+    stage_changed_at: string | null;
+    created_at: string | null;
+    deleted_at: string | null;
+  };
+  type CRow = {
+    id: string;
+    name: string;
+    assigned_to: string;
+    captured_at: string | null;
+    created_at: string | null;
+    deleted_at: string | null;
+    projects: PRow[] | null;
+  };
+
+  // Collect open (stage 1–5) projects and index them by client.
+  const open: {
+    clientId: string;
+    clientName: string;
+    assignedTo: Salesperson;
+    capturedMonth: string;
+    project: PRow;
+  }[] = [];
+  const clientIds = new Set<string>();
+  for (const c of (clientsRaw as unknown as CRow[]).filter((c) => !c.deleted_at)) {
+    const capturedMonth = (c.captured_at ?? c.created_at ?? "").slice(0, 7);
+    for (const p of c.projects ?? []) {
+      if (p.deleted_at) continue;
+      if (!isOpenStage((p.pipeline_stage ?? 1) as PipelineStage)) continue;
+      open.push({
+        clientId: c.id,
+        clientName: c.name,
+        assignedTo: c.assigned_to as Salesperson,
+        capturedMonth,
+        project: p,
+      });
+      clientIds.add(c.id);
+    }
+  }
+  if (open.length === 0) return [];
+
+  // Follow-ups for those clients: any pending one keeps the deal active; the
+  // latest done_at counts as a touch. Project-level follow-ups map to their
+  // project; client-general ones (project_id null) keep all that client's deals
+  // warm (early leads). Fails soft if the table is missing.
+  const pendingProject = new Set<string>(); // projectId
+  const pendingClient = new Set<string>(); // clientId (general follow-up)
+  const lastDoneProject = new Map<string, string>(); // projectId → max done_at
+  const lastDoneClient = new Map<string, string>(); // clientId → max done_at (general)
+  {
+    const { data: fus } = await db
+      .from("follow_ups")
+      .select("client_id, project_id, status, done_at")
+      .in("client_id", Array.from(clientIds));
+    for (const f of (fus as {
+      client_id: string;
+      project_id: string | null;
+      status: string;
+      done_at: string | null;
+    }[] | null) ?? []) {
+      if (f.status === "pending") {
+        if (f.project_id) pendingProject.add(f.project_id);
+        else pendingClient.add(f.client_id);
+      } else if (f.done_at) {
+        if (f.project_id) {
+          const cur = lastDoneProject.get(f.project_id);
+          if (!cur || f.done_at > cur) lastDoneProject.set(f.project_id, f.done_at);
+        } else {
+          const cur = lastDoneClient.get(f.client_id);
+          if (!cur || f.done_at > cur) lastDoneClient.set(f.client_id, f.done_at);
+        }
+      }
+    }
+  }
+
+  // Latest logged activity per project (notes, updates) also counts as a touch.
+  const lastActivity = new Map<string, string>(); // projectId → max created_at
+  {
+    const projectIds = open.map((o) => o.project.id);
+    const { data: acts } = await db
+      .from("activities")
+      .select("project_id, created_at")
+      .in("project_id", projectIds);
+    for (const a of (acts as { project_id: string | null; created_at: string }[] | null) ?? []) {
+      if (!a.project_id) continue;
+      const cur = lastActivity.get(a.project_id);
+      if (!cur || a.created_at > cur) lastActivity.set(a.project_id, a.created_at);
+    }
+  }
+
+  const now = new Date();
+  const byMonth = new Map<string, ColdDeal[]>();
+
+  for (const o of open) {
+    const p = o.project;
+    // Still being worked → not cold.
+    if (pendingProject.has(p.id) || pendingClient.has(o.clientId)) continue;
+
+    // Last touch = latest of: stage move, completed follow-up, logged activity.
+    const touches = [
+      p.stage_changed_at ?? p.created_at,
+      lastDoneProject.get(p.id),
+      lastDoneClient.get(o.clientId),
+      lastActivity.get(p.id),
+    ].filter(Boolean) as string[];
+    const lastTouch = touches.length
+      ? touches.reduce((max, t) => (t > max ? t : max))
+      : (p.created_at ?? now.toISOString());
+
+    const idleDays = daysSince(lastTouch, now);
+    if (idleDays == null || idleDays < COLD_DAYS) continue;
+
+    const list = byMonth.get(o.capturedMonth) ?? [];
+    list.push({
+      clientId: o.clientId,
+      clientName: o.clientName,
+      projectId: p.id,
+      projectName: p.name,
+      budget: p.budget ?? 0,
+      assignedTo: o.assignedTo,
+      stage: (p.pipeline_stage ?? 1) as PipelineStage,
+      capturedMonth: o.capturedMonth,
+      idleDays,
+      lastTouch,
+    });
+    byMonth.set(o.capturedMonth, list);
+  }
+
+  // Oldest capture month first (that's the one to clear out); coldest deal first.
+  return Array.from(byMonth.keys())
+    .sort()
+    .map((month) => ({
+      month,
+      deals: byMonth.get(month)!.sort((a, b) => b.idleDays - a.idleDays),
+    }));
 }

@@ -1,4 +1,5 @@
-import { getClients } from "@/lib/db";
+import Link from "next/link";
+import { getClients, getColdDeals } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { KanbanBoard, type BoardColumns } from "./KanbanBoard";
 import type { Client } from "@/lib/data";
@@ -34,19 +35,39 @@ function buildInitialColumns(data: Client[]): BoardColumns {
 
 export default async function PipelinePage() {
   const profile = await getCurrentProfile();
-  const clients = await getClients(
-    profile?.isManager ? undefined : profile?.name
-  );
+  const scope = profile?.isManager ? undefined : profile?.name;
+  const [clients, coldGroups] = await Promise.all([
+    getClients(scope),
+    getColdDeals(scope),
+  ]);
   const initialColumns = buildInitialColumns(clients);
+  const coldCount = coldGroups.reduce((n, g) => n + g.deals.length, 0);
 
   return (
     <div className="flex flex-col">
       {/* Page header */}
       <div className="max-w-7xl mx-auto w-full px-6 pt-10 pb-4">
         <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-            Pipeline
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
+              Pipeline
+            </h1>
+            <Link
+              href="/pipeline/cleanup"
+              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                coldCount > 0
+                  ? "border-red-300 text-red-600 bg-red-50 hover:bg-red-100 dark:border-red-800/60 dark:text-red-300 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                  : "border-(--border) text-(--text-muted) hover:text-(--text-primary)"
+              }`}
+            >
+              Cleanup
+              {coldCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  {coldCount}
+                </span>
+              )}
+            </Link>
+          </div>
           <div className="flex items-center gap-3 text-xs text-(--text-muted) flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-sky-500" />
