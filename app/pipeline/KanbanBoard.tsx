@@ -13,6 +13,7 @@ import {
   STALE_DAYS,
   type PipelineStage,
   type PropertyType,
+  type PaymentStatus,
   type Salesperson,
 } from "@/lib/data";
 import { updatePipelineStage } from "@/app/actions";
@@ -32,6 +33,8 @@ export type CardEntry = {
   // Days adrift: open funnel, no pending follow-up, no forward move.
   // null = actively worked or already resolved.
   idleDays: number | null;
+  // Payment status (completed deals only) so the balance gets chased.
+  payment?: { status: PaymentStatus; balance: number };
 };
 
 export type BoardColumns = Record<string, CardEntry[]>;
@@ -402,6 +405,27 @@ export function KanbanBoard({ initialColumns }: KanbanBoardProps) {
                                       {propertyTypeLabel[card.propertyType]}
                                     </span>
                                   </div>
+
+                                  {/* Payment status (completed deals) */}
+                                  {card.payment && (
+                                    <div className="mt-2.5">
+                                      {card.payment.status === "paid" ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M20 6 9 17l-5-5" />
+                                          </svg>
+                                          Paid
+                                        </span>
+                                      ) : (
+                                        <span
+                                          title="Balance still to collect"
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                        >
+                                          {formatCurrency(card.payment.balance)} pending
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
 
                                   {/* Assignee */}
                                   <div className="mt-2.5 pt-2.5 border-t border-(--border) flex items-center gap-1.5">

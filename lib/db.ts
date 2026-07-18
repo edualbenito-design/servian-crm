@@ -1,6 +1,6 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
+import { quoteTotals, paymentSummary, nextPendingFollowUp, advanceAlert, isCompletedStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
 
 type DbQuote = {
   id: string;
@@ -1426,4 +1426,67 @@ export async function getColdDeals(assignedTo?: string): Promise<ColdMonthGroup[
       month,
       deals: byMonth.get(month)!.sort((a, b) => b.idleDays - a.idleDays),
     }));
+}
+
+// ── Per-project payment status ─────────────────────────────────────────────────
+// Committed (sum of accepted quotes) vs. paid, per project. Lets the pipeline
+// show, on a completed deal, whether it's fully paid or still owes money — so the
+// commercial chases the balance. Only projects with something committed appear.
+
+export interface ProjectPayment {
+  committed: number;
+  paid: number;
+  balance: number;
+  status: PaymentStatus;
+}
+
+export async function getProjectPaymentSummaries(): Promise<Record<string, ProjectPayment>> {
+  const db = serverClient();
+
+  // Accepted quotes = money the client committed to. Resilient to a missing
+  // discount_pct column (retry without it).
+  type QRow = { id: string; project_id: string; items: QuoteItem[] | null; vat_rate: number; discount_pct?: number | null };
+  const QCOLS = "id, project_id, items, vat_rate";
+  let quotes: QRow[] | null = null;
+  {
+    const r = await db.from("quotes").select(`${QCOLS}, discount_pct`).eq("status", "accepted");
+    quotes = r.data as unknown as QRow[] | null;
+    if (r.error) {
+      const r2 = await db.from("quotes").select(QCOLS).eq("status", "accepted");
+      quotes = r2.data as unknown as QRow[] | null;
+    }
+  }
+  if (!quotes) return {};
+
+  // committed per project
+  const committed = new Map<string, number>();
+  for (const q of quotes) {
+    const total = quoteTotals({
+      items: q.items ?? [],
+      vatRate: q.vat_rate,
+      discountPct: q.discount_pct ?? undefined,
+    }).total;
+    committed.set(q.project_id, (committed.get(q.project_id) ?? 0) + total);
+  }
+  if (committed.size === 0) return {};
+
+  // paid per project (fail soft if the payments table isn't there yet).
+  const paid = new Map<string, number>();
+  const { data: pays } = await db.from("payments").select("project_id, amount");
+  for (const p of (pays as { project_id: string | null; amount: number }[] | null) ?? []) {
+    if (!p.project_id) continue;
+    paid.set(p.project_id, (paid.get(p.project_id) ?? 0) + (Number(p.amount) || 0));
+  }
+
+  const out: Record<string, ProjectPayment> = {};
+  for (const [projectId, total] of committed) {
+    const s = paymentSummary(total, [{ amount: paid.get(projectId) ?? 0 }]);
+    out[projectId] = {
+      committed: total,
+      paid: s.paid,
+      balance: s.balance,
+      status: s.status,
+    };
+  }
+  return out;
 }

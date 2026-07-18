@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { getClients, getColdDeals } from "@/lib/db";
+import { getClients, getColdDeals, getProjectPaymentSummaries, type ProjectPayment } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { KanbanBoard, type BoardColumns } from "./KanbanBoard";
 import type { Client } from "@/lib/data";
-import { openIdleDays } from "@/lib/data";
+import { openIdleDays, isCompletedStage } from "@/lib/data";
 
-function buildInitialColumns(data: Client[]): BoardColumns {
+function buildInitialColumns(
+  data: Client[],
+  payments: Record<string, ProjectPayment>
+): BoardColumns {
   const columns: BoardColumns = {};
   for (let s = 1; s <= 9; s++) columns[String(s)] = [];
 
@@ -14,6 +17,11 @@ function buildInitialColumns(data: Client[]): BoardColumns {
     // A deal's "month" = when the client was captured (creation as fallback).
     const capturedMonth = (client.capturedAt ?? client.createdAt ?? "").slice(0, 7);
     for (const project of client.projects) {
+      // Payment status only on completed deals — that's where chasing the
+      // final balance matters (advance payments are flagged elsewhere).
+      const pay = isCompletedStage(project.pipelineStage)
+        ? payments[project.id]
+        : undefined;
       columns[String(project.pipelineStage)].push({
         projectId: project.id,
         projectName: project.name,
@@ -26,6 +34,9 @@ function buildInitialColumns(data: Client[]): BoardColumns {
         // Days adrift: open funnel, no pending follow-up, no forward move.
         // null = actively worked or already resolved.
         idleDays: openIdleDays(project, now),
+        payment: pay
+          ? { status: pay.status, balance: pay.balance }
+          : undefined,
       });
     }
   }
@@ -36,11 +47,12 @@ function buildInitialColumns(data: Client[]): BoardColumns {
 export default async function PipelinePage() {
   const profile = await getCurrentProfile();
   const scope = profile?.isManager ? undefined : profile?.name;
-  const [clients, coldGroups] = await Promise.all([
+  const [clients, coldGroups, payments] = await Promise.all([
     getClients(scope),
     getColdDeals(scope),
+    getProjectPaymentSummaries(),
   ]);
-  const initialColumns = buildInitialColumns(clients);
+  const initialColumns = buildInitialColumns(clients, payments);
   const coldCount = coldGroups.reduce((n, g) => n + g.deals.length, 0);
 
   return (

@@ -6,6 +6,7 @@ import {
   isDeadStage,
   isCompletedStage,
   isOpenStage,
+  daysSince,
   LOST_STAGE,
   GHOSTING_STAGE,
 } from "./data";
@@ -99,6 +100,46 @@ export function conversionFunnel(clients: Client[]): Conversion {
     ghosting,
     decided,
     winRate: decided > 0 ? Math.round((won / decided) * 100) : 0,
+  };
+}
+
+// ── Time to close (captured → outcome), using the sealed closed_at ─────────────
+// How long deals take from capture to a final outcome. Won and lost are split so
+// a slow "yes" and a slow "no" don't blur together. Needs closed_at populated
+// (deals closed before the migration backfill to their creation date).
+
+export interface CloseTimes {
+  avgDays: number | null; // across all closed deals
+  samples: number;
+  wonAvgDays: number | null; // won (on site + completed)
+  wonSamples: number;
+  lostAvgDays: number | null; // lost + ghosting
+  lostSamples: number;
+}
+
+export function closeTimes(clients: Client[]): CloseTimes {
+  const won: number[] = [];
+  const lost: number[] = [];
+  for (const c of clients) {
+    const start = c.capturedAt ?? c.createdAt;
+    for (const p of c.projects) {
+      if (!p.closedAt) continue;
+      const days = daysSince(start, new Date(p.closedAt));
+      if (days == null || days < 0) continue;
+      if (isWonStage(p.pipelineStage)) won.push(days);
+      else if (isDeadStage(p.pipelineStage)) lost.push(days);
+    }
+  }
+  const avg = (xs: number[]) =>
+    xs.length ? Math.round(xs.reduce((s, d) => s + d, 0) / xs.length) : null;
+  const all = [...won, ...lost];
+  return {
+    avgDays: avg(all),
+    samples: all.length,
+    wonAvgDays: avg(won),
+    wonSamples: won.length,
+    lostAvgDays: avg(lost),
+    lostSamples: lost.length,
   };
 }
 

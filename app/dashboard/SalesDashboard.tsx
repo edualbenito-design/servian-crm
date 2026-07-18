@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { Client } from "@/lib/data";
 import { followUpState, PIPELINE_STAGES } from "@/lib/data";
-import { pipelineFunnel, conversionFunnel } from "@/lib/analytics";
+import { pipelineFunnel, conversionFunnel, closeTimes } from "@/lib/analytics";
 import type { QuoteStats, MonthMovement } from "@/lib/db";
 import { ConversionCard } from "./ConversionCard";
 import { ThisMonthCard } from "./ThisMonthCard";
+import { CloseTimeCard } from "./CloseTimeCard";
 
 function num(n: number) {
   return new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
@@ -65,6 +66,7 @@ export function SalesDashboard({
   const funnel = pipelineFunnel(clients);
   const maxFunnel = Math.max(1, ...funnel.map((f) => f.count));
   const conversion = conversionFunnel(clients);
+  const close = closeTimes(clients);
 
   const dueCount = overdue.length + today.length;
 
@@ -204,6 +206,11 @@ export function SalesDashboard({
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
         <ConversionCard conversion={conversion} quoteStats={quoteStats} />
         <ThisMonthCard movement={movement} />
+      </div>
+
+      {/* Time to close */}
+      <div className="mt-6">
+        <CloseTimeCard close={close} />
       </div>
     </div>
   );

@@ -8,10 +8,12 @@ import {
   performanceByCommercial,
   durationBySize,
   conversionFunnel,
+  closeTimes,
 } from "@/lib/analytics";
 import { SalesDashboard } from "./SalesDashboard";
 import { ConversionCard } from "./ConversionCard";
 import { ThisMonthCard } from "./ThisMonthCard";
+import { CloseTimeCard } from "./CloseTimeCard";
 
 function money(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -88,6 +90,7 @@ export default async function DashboardPage() {
   const funnel = pipelineFunnel(clients);
   const commercials = performanceByCommercial(clients);
   const durations = durationBySize(clients);
+  const close = closeTimes(clients);
 
   const maxMonth = Math.max(1, ...months.map((m) => m.count));
   const maxFunnel = Math.max(1, ...funnel.map((f) => f.count));
@@ -219,31 +222,9 @@ export default async function DashboardPage() {
         <ThisMonthCard movement={movement} />
       </div>
 
+      {/* Time to close + avg duration */}
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
-        {/* Performance by commercial */}
-        <Card title="Performance by commercial">
-          <div className="space-y-3">
-            {commercials.map((c) => (
-              <div key={c.name}>
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-(--text-secondary) font-medium">
-                    {c.name}
-                  </span>
-                  <span className="text-(--text-muted)">
-                    {c.clients} clients · {c.activeProjects} active ·{" "}
-                    {money(c.value)}
-                  </span>
-                </div>
-                <div className="h-2.5 rounded-full bg-(--surface) overflow-hidden">
-                  <div
-                    className="h-full bg-(--accent) rounded-full"
-                    style={{ width: `${(c.value / maxCommercial) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <CloseTimeCard close={close} />
 
         {/* Avg duration by size */}
         <Card title="Avg. project duration by size">
@@ -274,6 +255,33 @@ export default async function DashboardPage() {
           <p className="mt-3 text-xs text-(--text-muted)">
             Based on completed projects with start and end dates.
           </p>
+        </Card>
+      </div>
+
+      {/* Performance by commercial */}
+      <div className="mt-6">
+        <Card title="Performance by commercial">
+          <div className="space-y-3">
+            {commercials.map((c) => (
+              <div key={c.name}>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-(--text-secondary) font-medium">
+                    {c.name}
+                  </span>
+                  <span className="text-(--text-muted)">
+                    {c.clients} clients · {c.activeProjects} active ·{" "}
+                    {money(c.value)}
+                  </span>
+                </div>
+                <div className="h-2.5 rounded-full bg-(--surface) overflow-hidden">
+                  <div
+                    className="h-full bg-(--accent) rounded-full"
+                    style={{ width: `${(c.value / maxCommercial) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
     </div>
