@@ -1,8 +1,80 @@
 # HANDOFF — Servian Contracting CRM
 
 > Documento de traspaso para una nueva sesión de Claude Code.
-> Última actualización: 2026-07-08. Léelo entero antes de tocar nada.
+> Última actualización: 2026-07-17. Léelo entero antes de tocar nada.
 > Objetivo: que una sesión nueva continúe SIN leer el historial completo.
+> ⚠️ El grueso de §6/§10 es de 2026-07-08. Para lo MÁS reciente y lo que viene,
+> lee primero la **§0** de abajo (tiene prioridad sobre menciones antiguas).
+
+---
+
+## 0. Estado más reciente (2026-07-17) y próximos pasos
+
+### ✅ Novedades desde 2026-07-08 (todo en producción)
+- **Email 9am ACTIVADO de verdad:** dominio `serviancontracting.com` verificado en
+  Resend (DNS en Namecheap; Eduardo es admin invitado; región Tokyo). `RESEND_FROM`
+  = `Servian CRM <noreply@serviancontracting.com>`. Variables en Vercel. Probado con
+  todo el equipo. **Bug arreglado:** `proxy.ts` excluía mal `/api` → se añadió `api`
+  al matcher (si no, cron e iCal se redirigían a /login). **Lógica:** días normales
+  solo email si hay follow-ups; **lunes** resumen semanal a los 4 comerciales con
+  agenda de la semana + frase motivadora rotativa (`lib/email.ts`).
+- **Feed iCal por comercial** (`/api/ical?u=<nombre>&t=<token HMAC>`, `lib/ical.ts`),
+  botón "Subscribe on your phone" en el calendario.
+- **PWA + iOS safe-area:** iconos (`public/icon-*.png`, `apple-touch-icon.png`),
+  `app/manifest.ts`; cabecera respeta el notch (`env(safe-area-inset-*)`) y es sticky.
+- **Módulo 4:** página `/reactivation` (nav "Value") = valor de vida por cliente +
+  reactivación de dormidos. Plantillas de WhatsApp en la ficha (`lib/whatsapp.ts`).
+- **Ficha de cliente:** "Total Paid" y "Outstanding" reales en el resumen.
+- **Cotizaciones — estados:** draft/sent/**accepted**/**alternative**/**lost** (+legacy
+  `rejected`=lost). Al aceptar una, las hermanas draft/sent del mismo proyecto pasan
+  solas a `alternative` (no cuentan como pérdida). Tasa aceptación = accepted/(accepted+lost).
+- **Cotizaciones — descuento:** `discount_pct` + `discount_reason`; el IVA se aplica
+  sobre el neto (subtotal − descuento). En el modal y el PDF.
+- **PIPELINE AHORA 9 ETAPAS** (¡ignora la lista vieja de §6/§10!): 1 New Lead ·
+  2 Contacted · 3 Site Visit · 4 Quoted · 5 Negotiation · 6 Won — On site ·
+  7 Completed · 8 Lost · 9 Ghosting. Los desenlaces (6-9) derivan de la etapa con
+  helpers en `lib/data.ts` (`isWonStage/isDeadStage/isOpenStage/isCompletedStage`),
+  NO del `status` legacy. `ConversionCard` = Open/Won/Lost/Ghosting + win rate.
+- **Dashboard "Monthly movement":** foto por mes (entered/won/completed/lost/ghosting
+  + **overdue follow-ups**) con selector de mes y drill-down (clic → proyectos →
+  enlace a ficha). `getMonthlyMovement` en `lib/db.ts`. Ignora el historial de cambios
+  de etapa anterior a 2026-07-17 (los números de etapa cambiaron de significado).
+- **Aviso de vencidos:** fila "⚠ Overdue follow-ups" en Monthly movement (+ meses
+  marcados en el selector) y **banner en el Calendario** con enlace y salto al mes.
+- **Cuentas:** los 4 comerciales (Joana, Alfie, Elsayed, Faizan) ya tienen login.
+
+### 🗄️ SQL corrido en esta tanda (Supabase, ya aplicado por Eduardo)
+- `sql/2026-07-17-quote-status-alternative-lost.sql` — amplía `quotes_status_check`.
+- `sql/2026-07-17-quote-discount.sql` — columnas `discount_pct`/`discount_reason`.
+- `sql/2026-07-17-pipeline-9-stages.sql` — check `pipeline_stage` 1..9 + remapea el
+  viejo stage 8 (Completed) → 7. **(No hay SQL pendiente.)**
+
+### 🔜 A DESARROLLAR (pedido por Eduardo 2026-07-17 — siguiente sesión)
+1. **Filtro por mes en el Pipeline.** Al entrar al tablero, poder ver la foto de un
+   mes concreto (qué hay en cada etapa ese mes) — mismo patrón que el filtro por mes
+   de la lista de clientes / Collections. Definir "mes del deal" = mes de **captación**
+   del cliente (`clients.captured_at`) — recomendado — o de creación del proyecto.
+2. **Cierre forzado / que no queden deals colgados.** Objetivo de negocio: que al
+   pasar los meses, todo lo de un mes (ej. marzo) acabe SOLO en **Win / Lost /
+   Ghosting**; que no quede nada "por cotizar / por empezar / pendiente". Mecanismo a
+   diseñar (proponer a Eduardo antes de construir):
+   - Detección de deals **estancados** (llevan X tiempo en una etapa del funnel sin
+     avanzar ni follow-up) → aviso para resolverlos.
+   - Vista/ritual de **"cierre de mes"**: listar los deals abiertos de meses anteriores
+     y forzar su categorización a un desenlace.
+   - (Opción) auto-sugerir **Ghosting** tras N follow-ups sin respuesta.
+3. **Fechas captado vs cerrado.** Un lead captado en marzo puede cerrarse meses
+   después. Guardar la fecha de captación (ya existe `captured_at`) Y una fecha de
+   **cierre/outcome** del proyecto (nueva, p.ej. `closed_at`, sellada al llegar a
+   Won/Completed/Lost/Ghosting). Permite tiempo medio de cierre real y que la foto
+   mensual distinga "entró en X" vs "se cerró en Y". (Hoy `getMonthlyMovement` ya
+   separa entered=created_at de outcomes=fecha del cambio de etapa, pero un `closed_at`
+   explícito es más robusto.)
+4. **En Completed: estado de pago.** Sobre los proyectos completados, indicar si está
+   TODO pagado o queda saldo, para que el comercial persiga el cobro. Datos ya
+   disponibles (`paymentSummary` / Collections). Mostrar en la tarjeta de la columna
+   Completed del pipeline y/o en la fila "Completed" de Monthly movement (badge
+   "paid" / "AED X pending").
 
 ---
 
