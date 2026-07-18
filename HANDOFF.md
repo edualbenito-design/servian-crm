@@ -95,13 +95,17 @@
   `MonthPicker` + `MonthlyReportView`; `SalesDashboard` acepta prop `monthPicker`.
   **Sin SQL nuevo** (usa columnas existentes + `closed_at`).
 
+### ✅ Hecho 2026-07-19 — Monthly movement usa `closed_at` (desplegado)
+- `getMonthlyMovement` ahora saca won/completed/lost/ghosting de `closed_at` (clasificado
+  por la etapa actual del proyecto), no del parseo del log `stage_changed`. Fuera el
+  guard `STAGE_SEMANTICS_SINCE` y la regex sobre el texto del log; alineado con
+  `getMonthlyReport`. Los cierres previos (backfill a `created_at`) ya aparecen.
+
 ### 🔜 A DESARROLLAR (siguiente)
-- (Menor) Usar `closed_at` en `getMonthlyMovement` para una foto mensual más robusta que
-  el parseo del log de cambios de etapa (hoy `getMonthlyReport` ya usa `closed_at`;
-  `getMonthlyMovement` sigue con el log antiguo — unificarlos algún día).
 - Los 4 puntos originales del roadmap (filtro pipeline, cierre/Cleanup, captado-vs-cerrado,
-  pago en Completed) están TODOS hechos. Pendientes reales siguen siendo de terceros
-  (§10: activar/ampliar email depende de Sergio; RRSS on hold).
+  pago en Completed) + filtro del Dashboard + este detalle: TODOS hechos. Pendientes reales
+  siguen siendo de terceros (§10: activar/ampliar email depende de Sergio; RRSS on hold).
+  Esperando nuevas ideas de Eduardo.
 
 ### 📋 Preferencia de Eduardo (2026-07-18) — SQL
 - **SQL como bloque de código plano en el chat** (el formato de siempre, ASCII, SIN
