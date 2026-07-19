@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertRole } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -1134,6 +1134,136 @@ async function assertCanAccessClient(clientId: string): Promise<void> {
   if (!data || data.assigned_to !== profile.name) {
     throw new Error("Not allowed for this client.");
   }
+}
+
+// ── Manager → commercial alerts ────────────────────────────────────────────────
+
+// Raise a new alert thread on a client (managers only), optionally about one of
+// its projects. The first message is the manager's note.
+export async function createAlert(
+  clientId: string,
+  projectId: string | null,
+  body: string
+): Promise<Alert> {
+  const profile = await getCurrentProfile();
+  if (!profile || !profile.isManager) throw new Error("Only managers can raise alerts.");
+  const text = body.trim();
+  if (!text) throw new Error("Write a message first.");
+
+  const db = serverClient();
+  const nowIso = new Date().toISOString();
+  const { data: a, error } = await db
+    .from("alerts")
+    .insert({
+      client_id: clientId,
+      project_id: projectId,
+      created_by: profile.name,
+      status: "open",
+      last_message_at: nowIso,
+      manager_read_at: nowIso, // the author has "read" it
+    })
+    .select("*")
+    .single();
+  if (error || !a) throw new Error(error?.message ?? "Could not create the alert.");
+
+  const { data: m } = await db
+    .from("alert_messages")
+    .insert({ alert_id: a.id, author: profile.name, author_role: "manager", body: text })
+    .select("*")
+    .single();
+
+  revalidatePath(`/clients/${clientId}`);
+  return {
+    id: a.id,
+    clientId,
+    projectId: projectId ?? undefined,
+    createdBy: profile.name,
+    status: "open",
+    createdAt: a.created_at,
+    lastMessageAt: a.last_message_at,
+    managerReadAt: nowIso,
+    messages: [
+      {
+        id: m?.id ?? a.id,
+        author: profile.name,
+        authorRole: "manager",
+        body: text,
+        createdAt: m?.created_at ?? nowIso,
+      },
+    ],
+  };
+}
+
+// Reply in a thread (manager or the client's commercial). Stamps the author's
+// read timestamp so their own message never counts as unread to them.
+export async function replyAlert(
+  clientId: string,
+  alertId: string,
+  body: string
+): Promise<AlertMessage> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const text = body.trim();
+  if (!text) throw new Error("Write a message first.");
+  const role: AlertRole = profile?.isManager ? "manager" : "sales";
+
+  const db = serverClient();
+  const nowIso = new Date().toISOString();
+  const { data: m, error } = await db
+    .from("alert_messages")
+    .insert({ alert_id: alertId, author: profile?.name ?? null, author_role: role, body: text })
+    .select("*")
+    .single();
+  if (error || !m) throw new Error(error?.message ?? "Could not send the message.");
+
+  const readCol = role === "manager" ? "manager_read_at" : "sales_read_at";
+  await db
+    .from("alerts")
+    .update({ last_message_at: nowIso, [readCol]: nowIso })
+    .eq("id", alertId)
+    .eq("client_id", clientId);
+
+  revalidatePath(`/clients/${clientId}`);
+  return { id: m.id, author: profile?.name ?? "", authorRole: role, body: text, createdAt: m.created_at };
+}
+
+// Resolve / reopen a thread (manager or the client's commercial).
+export async function resolveAlert(clientId: string, alertId: string): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const profile = await getCurrentProfile();
+  const db = serverClient();
+  await db
+    .from("alerts")
+    .update({ status: "resolved", resolved_by: profile?.name ?? null, resolved_at: new Date().toISOString() })
+    .eq("id", alertId)
+    .eq("client_id", clientId);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+export async function reopenAlert(clientId: string, alertId: string): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  await db
+    .from("alerts")
+    .update({ status: "open", resolved_by: null, resolved_at: null })
+    .eq("id", alertId)
+    .eq("client_id", clientId);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// Mark every alert on a client as read for the current user's role — called when
+// they open the client so the header bell clears. Silent (no throw for others).
+export async function markAlertsRead(clientId: string): Promise<void> {
+  const profile = await getCurrentProfile();
+  if (!profile) return;
+  if (!profile.isManager) {
+    const db0 = serverClient();
+    const { data } = await db0.from("clients").select("assigned_to").eq("id", clientId).single();
+    if (!data || data.assigned_to !== profile.name) return;
+  }
+  const db = serverClient();
+  const col = profile.isManager ? "manager_read_at" : "sales_read_at";
+  await db.from("alerts").update({ [col]: new Date().toISOString() }).eq("client_id", clientId);
 }
 
 export async function uploadProjectFile(

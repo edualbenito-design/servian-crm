@@ -4,7 +4,10 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { NavLinks } from "./components/NavLinks";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { LogoLockup } from "./components/Logo";
+import { AlertBell } from "./components/AlertBell";
+import { AlertPopup } from "./components/AlertPopup";
 import { getCurrentProfile } from "@/lib/auth";
+import { getAlertsForUser } from "@/lib/db";
 import { signOut } from "./login/actions";
 import "./globals.css";
 
@@ -58,6 +61,9 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const profile = await getCurrentProfile();
+  const alerts = profile
+    ? await getAlertsForUser(profile.name, profile.isManager)
+    : [];
 
   return (
     <html
@@ -93,6 +99,7 @@ export default async function RootLayout({
               <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 <NavLinks isManager={profile.isManager} />
                 <div className="hidden sm:block w-px h-5 bg-(--border) mx-1" />
+                <AlertBell alerts={alerts} />
                 <ThemeToggle />
 
                 {/* User chip */}
@@ -122,6 +129,7 @@ export default async function RootLayout({
           </header>
         )}
         <main className="flex-1">{children}</main>
+        {profile && <AlertPopup alerts={alerts} />}
         {profile && (
           <footer className="border-t border-(--border) bg-(--surface)">
             <div className="max-w-7xl mx-auto px-6 h-10 flex items-center">

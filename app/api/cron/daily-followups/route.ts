@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClients } from "@/lib/db";
+import { getClients, getAlertsForUser, type AlertInbox } from "@/lib/db";
 import {
   recipientProfiles,
   dueFollowUps,
@@ -66,18 +66,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, mode: "weekly", results });
   }
 
-  // Daily: only people with overdue/today follow-ups.
+  // Daily: people with overdue/today follow-ups OR open manager alerts.
   const emailByName = new Map(recipients.map((r) => [r.name, r.email]));
   const byPerson = groupByPerson(dueFollowUps(clients));
-  for (const [name, list] of byPerson) {
+
+  // Open alerts per commercial (managers raise them for sales).
+  const alertsByName = new Map<string, AlertInbox[]>();
+  for (const r of recipients) {
+    if (r.role !== "sales") continue;
+    const a = await getAlertsForUser(r.name, false);
+    if (a.length) alertsByName.set(r.name, a);
+  }
+
+  const names = new Set<string>([...byPerson.keys(), ...alertsByName.keys()]);
+  for (const name of names) {
+    const list = byPerson.get(name) ?? [];
+    const alerts = alertsByName.get(name) ?? [];
     const email = emailByName.get(name);
     if (!email) {
       results.push({ name, count: list.length, sent: false, error: "no email" });
       continue;
     }
     try {
-      const res = await sendFollowUpEmail(email, name, list);
-      results.push({ name, email, count: list.length, sent: !res.error, error: res.error?.message });
+      const res = await sendFollowUpEmail(email, name, list, alerts);
+      results.push({ name, email, count: list.length + alerts.length, sent: !res.error, error: res.error?.message });
     } catch (e) {
       results.push({ name, email, count: list.length, sent: false, error: e instanceof Error ? e.message : "send failed" });
     }

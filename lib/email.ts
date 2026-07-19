@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { serverClient } from "./supabase/server";
 import { followUpState, type Client } from "./data";
+import type { AlertInbox } from "./db";
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://servian-crm.vercel.app";
@@ -68,6 +69,30 @@ function rowHtml(c: Client): string {
     </tr>`;
 }
 
+// Manager alerts waiting for this commercial — shown in the daily email.
+function alertsSectionHtml(alerts: AlertInbox[]): string {
+  if (alerts.length === 0) return "";
+  const rows = alerts
+    .map((a) => {
+      const about = a.projectName
+        ? `<span style="color:#777;"> · ${a.projectName}</span>`
+        : "";
+      return `
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #f3e9d2;">
+          <a href="${APP_URL}/clients/${a.clientId}" style="color:#111;text-decoration:none;font-weight:600;font-size:15px;">${a.clientName}</a>${about}
+          <div style="color:#7a5b1c;font-size:13px;margin-top:2px;">${a.lastMessage}</div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div style="background:#faf6ec;border:1px solid #f0e2bf;border-radius:10px;padding:4px 16px 8px;margin:0 0 20px;">
+      <p style="font-size:13px;font-weight:700;color:#7a5b1c;margin:12px 0 4px;">⚠️ ${alerts.length} alert${alerts.length === 1 ? "" : "s"} from your manager</p>
+      <table style="width:100%;border-collapse:collapse;">${rows}</table>
+    </div>`;
+}
+
 function shell(name: string, body: string): string {
   return `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111;">
@@ -79,11 +104,21 @@ function shell(name: string, body: string): string {
   </div>`;
 }
 
-function followUpEmailHtml(name: string, due: Client[]): string {
+function followUpEmailHtml(name: string, due: Client[], alerts: AlertInbox[] = []): string {
+  const alertsBlock = alertsSectionHtml(alerts);
+  if (due.length === 0) {
+    // Alerts-only email (no follow-ups due today).
+    return shell(
+      name,
+      `${alertsBlock}
+       <p style="color:#555;font-size:14px;margin:0 0 20px;">No follow-ups due today — but the alert${alerts.length === 1 ? "" : "s"} above need${alerts.length === 1 ? "s" : ""} your attention. Tap a name to open the client.</p>`
+    );
+  }
   const rows = due.map(rowHtml).join("");
   return shell(
     name,
-    `<p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
+    `${alertsBlock}
+     <p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
      <table style="width:100%;border-collapse:collapse;">${rows}</table>`
   );
 }
@@ -158,13 +193,18 @@ export async function sendWeeklyEmail(to: string, name: string, week: Client[]) 
 export async function sendFollowUpEmail(
   to: string,
   name: string,
-  due: Client[]
+  due: Client[],
+  alerts: AlertInbox[] = []
 ) {
   const resend = new Resend(process.env.RESEND_API_KEY);
+  const subject =
+    alerts.length > 0 && due.length === 0
+      ? `⚠️ ${alerts.length} manager alert${alerts.length === 1 ? "" : "s"} for you`
+      : `☀️ Your follow-ups today (${due.length})`;
   return resend.emails.send({
     from: FROM,
     to,
-    subject: `☀️ Your follow-ups today (${due.length})`,
-    html: followUpEmailHtml(name, due),
+    subject,
+    html: followUpEmailHtml(name, due, alerts),
   });
 }

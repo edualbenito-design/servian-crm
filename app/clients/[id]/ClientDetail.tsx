@@ -28,6 +28,7 @@ import { AttachmentControl } from "./AttachmentControl"; // optional file per pa
 import { SiteProgress } from "./SiteProgress"; // construction milestones
 import { QuotesSection } from "./QuotesSection";
 import { FilesSection } from "./FilesSection";
+import { AlertsPanel } from "./AlertsPanel";
 import { WhatsAppMenu } from "@/app/components/WhatsAppMenu"; // WhatsApp with message templates
 
 // ─── form types ───────────────────────────────────────────────────────────────
@@ -2000,6 +2001,14 @@ export function ClientDetail({
           </button>
         </div>
       </div>
+
+      {/* Manager → commercial alerts (full width, above the columns) */}
+      <AlertsPanel
+        clientId={client.id}
+        initialAlerts={client.alerts}
+        projects={client.projects.map((p) => ({ id: p.id, name: p.name }))}
+        isManager={isManager}
+      />
 
       {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

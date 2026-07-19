@@ -353,6 +353,33 @@ export interface Project {
   deletionReason?: string;
 }
 
+// ── Manager → commercial alerts (two-way thread on a client/project) ──────────
+export type AlertStatus = "open" | "resolved";
+export type AlertRole = "manager" | "sales";
+
+export interface AlertMessage {
+  id: string;
+  author: string;
+  authorRole: AlertRole;
+  body: string;
+  createdAt: string;
+}
+
+export interface Alert {
+  id: string;
+  clientId: string;
+  projectId?: string; // set when the alert is about a specific project
+  createdBy?: string;
+  status: AlertStatus;
+  createdAt: string;
+  lastMessageAt: string;
+  salesReadAt?: string;
+  managerReadAt?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  messages: AlertMessage[];
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -373,6 +400,8 @@ export interface Client {
   activities: Activity[];
   // General (no-project) follow-ups — e.g. for early leads before any project
   followUps: FollowUp[];
+  // Manager → commercial alerts on this client (some tagged to a project)
+  alerts: Alert[];
   // Deletion request (commercial asks; a manager confirms → archived)
   deletionRequestedBy?: string;
   deletionRequestedAt?: string;

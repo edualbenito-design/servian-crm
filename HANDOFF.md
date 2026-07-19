@@ -49,11 +49,12 @@
 - `sql/2026-07-17-pipeline-9-stages.sql` — check `pipeline_stage` 1..9 + remapea el
   viejo stage 8 (Completed) → 7.
 
-### 🗄️ SQL PENDIENTE (2026-07-18 — Eduardo debe correrlo)
-- **`sql/2026-07-18-project-stage-dates.sql`** — añade `projects.stage_changed_at` y
-  `projects.closed_at` (+ backfill). El código ya está desplegado y es RESILIENTE
-  (funciona sin la columna, cae a `created_at`); correrlo hace exactas las fechas de
-  inactividad y de cierre. Sin él, la vista Cleanup detecta "frío" por `created_at`.
+### 🗄️ SQL PENDIENTE (2026-07-19 — Eduardo debe correrlo)
+- **`sql/2026-07-19-alerts.sql`** — crea las tablas `alerts` + `alert_messages` para los
+  avisos manager→comercial. El código es RESILIENTE (sin las tablas no rompe: la campana
+  sale vacía y `attachAlerts` no adjunta nada). Sin correrlo, no se pueden crear avisos.
+- (Ya aplicado por Eduardo) `sql/2026-07-18-project-stage-dates.sql` — `stage_changed_at`
+  + `closed_at` en projects.
 
 ### ✅ Hecho 2026-07-18 (desplegado; falta solo correr el SQL de arriba)
 - **Filtro por mes en el Pipeline** (punto 1): selector "Captured" arriba del Kanban;
@@ -100,6 +101,21 @@
   por la etapa actual del proyecto), no del parseo del log `stage_changed`. Fuera el
   guard `STAGE_SEMANTICS_SINCE` y la regex sobre el texto del log; alineado con
   `getMonthlyReport`. Los cierres previos (backfill a `created_at`) ya aparecen.
+
+### ✅ Hecho 2026-07-19 — Avisos manager → comercial (desplegado; falta correr el SQL)
+- **Mini-hilo de avisos** con respuesta de dos vías. Un manager, en la ficha del cliente,
+  pulsa "Flag for commercial", elige destino (**Client-level** o **un proyecto concreto**)
+  y escribe el mensaje. El comercial (y el manager) pueden responder; cualquiera marca
+  **Resolved**/reopen. Componente `AlertsPanel.tsx` (autónomo, optimista) arriba de la ficha.
+- **Le llega por 3 canales:** (1) **pop-up** al abrir la app (`AlertPopup`, una vez por
+  sesión, reaparece si hay algo más nuevo); (2) **campana** con contador de no-leídos en la
+  cabecera (`AlertBell`, popover con enlaces); (3) incluido en el **email de las 9am** (a
+  quien tenga avisos abiertos, aunque no tenga follow-ups).
+- **Datos:** tablas `alerts`/`alert_messages`. `getClient` adjunta `client.alerts`;
+  `getAlertsForUser(name,isManager)` alimenta campana/pop-up/email (sales = avisos de sus
+  clientes; manager = los que él creó, para ver respuestas). Acciones en `actions.ts`:
+  `createAlert` (solo managers), `replyAlert`, `resolveAlert`, `reopenAlert`, `markAlertsRead`
+  (al abrir la ficha, limpia la campana). No-leído = `last_message_at` > tu `*_read_at`.
 
 ### 🔜 A DESARROLLAR (siguiente)
 - Los 4 puntos originales del roadmap (filtro pipeline, cierre/Cleanup, captado-vs-cerrado,

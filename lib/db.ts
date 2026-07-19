@@ -1,6 +1,6 @@
 import { serverClient } from "./supabase/server";
 import { quoteTotals, paymentSummary, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertStatus, AlertRole } from "./data";
 
 type DbQuote = {
   id: string;
@@ -251,6 +251,7 @@ function toClient(c: DbClient): Client {
     nextFollowUp: c.next_follow_up ?? undefined,
     followUpNote: c.follow_up_note ?? undefined,
     notes: c.notes ?? undefined,
+    alerts: [],
     // Hide archived (soft-deleted) projects everywhere.
     projects: c.projects
       .filter((p) => !p.deleted_at)
@@ -1107,7 +1108,156 @@ export async function getClient(id: string): Promise<Client | null> {
   await attachPayments(client);
   // Load every follow-up (pending + done) so the client page shows history.
   await attachFollowUps([client], { includeDone: true });
+  await attachAlerts(client);
   return client;
+}
+
+// ── Manager → commercial alerts ────────────────────────────────────────────────
+
+type DbAlert = {
+  id: string;
+  client_id: string;
+  project_id: string | null;
+  created_by: string | null;
+  status: string;
+  created_at: string;
+  last_message_at: string;
+  sales_read_at: string | null;
+  manager_read_at: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+};
+type DbAlertMessage = {
+  id: string;
+  alert_id: string;
+  author: string | null;
+  author_role: string | null;
+  body: string;
+  created_at: string;
+};
+
+function toAlert(a: DbAlert, messages: AlertMessage[]): Alert {
+  return {
+    id: a.id,
+    clientId: a.client_id,
+    projectId: a.project_id ?? undefined,
+    createdBy: a.created_by ?? undefined,
+    status: (a.status as AlertStatus) ?? "open",
+    createdAt: a.created_at,
+    lastMessageAt: a.last_message_at,
+    salesReadAt: a.sales_read_at ?? undefined,
+    managerReadAt: a.manager_read_at ?? undefined,
+    resolvedBy: a.resolved_by ?? undefined,
+    resolvedAt: a.resolved_at ?? undefined,
+    messages,
+  };
+}
+
+// Attaches all of a client's alert threads (with messages). Fails soft if the
+// alerts tables aren't there yet.
+async function attachAlerts(client: Client): Promise<void> {
+  const db = serverClient();
+  const { data: alertsRaw, error } = await db
+    .from("alerts")
+    .select("*")
+    .eq("client_id", client.id)
+    .order("last_message_at", { ascending: false });
+  if (error || !alertsRaw) return;
+
+  const ids = (alertsRaw as DbAlert[]).map((a) => a.id);
+  const byAlert = new Map<string, AlertMessage[]>();
+  if (ids.length) {
+    const { data: msgs } = await db
+      .from("alert_messages")
+      .select("*")
+      .in("alert_id", ids)
+      .order("created_at", { ascending: true });
+    for (const m of (msgs as DbAlertMessage[] | null) ?? []) {
+      const list = byAlert.get(m.alert_id) ?? [];
+      list.push({
+        id: m.id,
+        author: m.author ?? "",
+        authorRole: (m.author_role as AlertRole) ?? "manager",
+        body: m.body,
+        createdAt: m.created_at,
+      });
+      byAlert.set(m.alert_id, list);
+    }
+  }
+  client.alerts = (alertsRaw as DbAlert[]).map((a) => toAlert(a, byAlert.get(a.id) ?? []));
+}
+
+// One entry per open alert relevant to a user, for the header bell + pop-up.
+// Sales sees alerts on their clients; managers see alerts they raised (to catch
+// replies). `unread` = a message landed since the user last read the thread.
+export interface AlertInbox {
+  id: string;
+  clientId: string;
+  clientName: string;
+  projectName?: string;
+  lastMessage: string;
+  lastAuthorRole: AlertRole;
+  lastMessageAt: string;
+  unread: boolean;
+}
+
+export async function getAlertsForUser(name: string, isManager: boolean): Promise<AlertInbox[]> {
+  const db = serverClient();
+
+  let aq = db.from("alerts").select("*").eq("status", "open");
+  if (isManager) {
+    aq = aq.eq("created_by", name);
+  } else {
+    const { data: cs } = await db.from("clients").select("id").eq("assigned_to", name);
+    const ids = ((cs as { id: string }[] | null) ?? []).map((c) => c.id);
+    if (!ids.length) return [];
+    aq = aq.in("client_id", ids);
+  }
+  const { data: alertsRaw, error } = await aq.order("last_message_at", { ascending: false });
+  if (error || !alertsRaw || alertsRaw.length === 0) return [];
+  const alerts = alertsRaw as DbAlert[];
+
+  // Resolve client + project names.
+  const clientIds = Array.from(new Set(alerts.map((a) => a.client_id)));
+  const projectIds = Array.from(new Set(alerts.map((a) => a.project_id).filter(Boolean) as string[]));
+  const clientName = new Map<string, string>();
+  const projectName = new Map<string, string>();
+  {
+    const { data: cs } = await db.from("clients").select("id, name").in("id", clientIds);
+    for (const c of (cs as { id: string; name: string }[] | null) ?? []) clientName.set(c.id, c.name);
+  }
+  if (projectIds.length) {
+    const { data: ps } = await db.from("projects").select("id, name").in("id", projectIds);
+    for (const p of (ps as { id: string; name: string }[] | null) ?? []) projectName.set(p.id, p.name);
+  }
+
+  // Latest message per alert (for the snippet + who spoke last).
+  const lastMsg = new Map<string, { body: string; role: AlertRole; at: string }>();
+  {
+    const { data: msgs } = await db
+      .from("alert_messages")
+      .select("alert_id, author_role, body, created_at")
+      .in("alert_id", alerts.map((a) => a.id))
+      .order("created_at", { ascending: true });
+    for (const m of (msgs as { alert_id: string; author_role: string | null; body: string; created_at: string }[] | null) ?? []) {
+      lastMsg.set(m.alert_id, { body: m.body, role: (m.author_role as AlertRole) ?? "manager", at: m.created_at });
+    }
+  }
+
+  return alerts.map((a) => {
+    const readAt = isManager ? a.manager_read_at : a.sales_read_at;
+    const lm = lastMsg.get(a.id);
+    return {
+      id: a.id,
+      clientId: a.client_id,
+      clientName: clientName.get(a.client_id) ?? "Client",
+      projectName: a.project_id ? projectName.get(a.project_id) : undefined,
+      lastMessage: lm?.body ?? "",
+      lastAuthorRole: lm?.role ?? "manager",
+      lastMessageAt: a.last_message_at,
+      unread: !readAt || a.last_message_at > readAt,
+    };
+  });
 }
 
 // Loads payments for a client and attaches them to the matching quote inside
