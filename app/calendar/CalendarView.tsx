@@ -296,13 +296,12 @@ export function CalendarView({
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           </button>
-          <button
-            type="button"
-            onClick={goToday}
-            className="px-3 h-9 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 transition-colors"
-          >
-            Today
-          </button>
+          <span className="min-w-[8.5rem] text-center text-sm font-semibold text-(--text-primary)">
+            {new Date(view.year, view.month, 1).toLocaleDateString("en-AE", {
+              month: "long",
+              year: "numeric",
+            })}
+          </span>
           <button
             type="button"
             onClick={() => shiftMonth(1)}
@@ -310,6 +309,13 @@ export function CalendarView({
             aria-label="Next month"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
+          <button
+            type="button"
+            onClick={goToday}
+            className="ml-1 px-3 h-9 rounded-lg border border-(--border) text-sm font-medium text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 transition-colors"
+          >
+            Today
           </button>
         </div>
       </div>
