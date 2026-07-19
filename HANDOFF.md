@@ -49,12 +49,12 @@
 - `sql/2026-07-17-pipeline-9-stages.sql` — check `pipeline_stage` 1..9 + remapea el
   viejo stage 8 (Completed) → 7.
 
-### 🗄️ SQL PENDIENTE (2026-07-19 — Eduardo debe correrlo)
-- **`sql/2026-07-19-alerts.sql`** — crea las tablas `alerts` + `alert_messages` para los
-  avisos manager→comercial. El código es RESILIENTE (sin las tablas no rompe: la campana
-  sale vacía y `attachAlerts` no adjunta nada). Sin correrlo, no se pueden crear avisos.
-- (Ya aplicado por Eduardo) `sql/2026-07-18-project-stage-dates.sql` — `stage_changed_at`
-  + `closed_at` en projects.
+### 🗄️ SQL PENDIENTE (2026-07-19 — Eduardo debe correrlos)
+- **`sql/2026-07-19-alerts.sql`** — tablas `alerts` + `alert_messages` (avisos
+  manager→comercial). Resiliente: sin ellas la campana sale vacía y no rompe.
+- **`sql/2026-07-19-project-status-lost.sql`** — amplía el check de `projects.status`
+  para admitir `'lost'` (los 4 estados). Sin correrlo, guardar un proyecto como Lost falla.
+- (Ya aplicado) `sql/2026-07-18-project-stage-dates.sql` — `stage_changed_at`/`closed_at`.
 
 ### ✅ Hecho 2026-07-18 (desplegado; falta solo correr el SQL de arriba)
 - **Filtro por mes en el Pipeline** (punto 1): selector "Captured" arriba del Kanban;
@@ -116,6 +116,22 @@
   clientes; manager = los que él creó, para ver respuestas). Acciones en `actions.ts`:
   `createAlert` (solo managers), `replyAlert`, `resolveAlert`, `reopenAlert`, `markAlertsRead`
   (al abrir la ficha, limpia la campana). No-leído = `last_message_at` > tu `*_read_at`.
+
+### ✅ Hecho 2026-07-19 — Estado obligatorio + dinero Portfolio/Pending (desplegado; falta SQL)
+- **Estado de proyecto obligatorio** con 4 opciones: Active / On hold / Completed / **Lost**.
+  En el form de proyecto no hay valor por defecto: sin elegirlo **no deja guardar** (recuadro
+  rojo + "Please pick a status"). `ProjectStatus` ahora incluye `lost`.
+- **Estado ⇄ pipeline sincronizados** (helpers `reconcileStageStatus`/`statusFromStage` en
+  data.ts): Completed⇄stage 7, Lost⇄stage 8. `updateProject`/`createProject` reconcilian;
+  `updatePipelineStage` hace la sinc. inversa (arrastrar a Won/Completed/Lost/Ghosting cambia
+  el estado; volver al funnel revive a Active). Active/On hold no fuerzan etapa (si la etapa
+  era terminal, se recoloca en 6).
+- **Lista de clientes con 2 columnas de dinero** (`projectValue` en data.ts):
+  **Portfolio** = suma de cotizaciones **aceptadas** (0 si ninguna). **Pending** (radar) =
+  proyecto Active/On-hold sin aceptada → **la cotización más baja** (draft/sent), o el
+  `budget` si aún no hay cotización. **Lost → 0/0**. Completed → su valor en Portfolio.
+  Stats arriba (Portfolio verde, Pending ámbar) + columnas en tabla y tarjetas móvil.
+- Lo de "no inflar con la suma de dos cotizaciones" queda resuelto: Pending usa el mínimo.
 
 ### 🔜 A DESARROLLAR (siguiente)
 - Los 4 puntos originales del roadmap (filtro pipeline, cierre/Cleanup, captado-vs-cerrado,

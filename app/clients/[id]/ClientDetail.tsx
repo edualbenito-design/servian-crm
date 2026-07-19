@@ -10,6 +10,7 @@ import {
   followUpState,
   advanceAlert,
   quoteTotals,
+  reconcileStageStatus,
   ADVANCE_PCT,
   type Client,
   type Project,
@@ -52,7 +53,7 @@ type ProjectForm = {
   name: string;
   description: string;
   budget: string;
-  status: ProjectStatus;
+  status: ProjectStatus | ""; // "" = not chosen yet (must be picked before saving)
   pipelineStage: string;
   startDate: string;
   endDate: string;
@@ -77,7 +78,7 @@ const EMPTY_PROJECT: ProjectForm = {
   name: "",
   description: "",
   budget: "",
-  status: "active",
+  status: "", // force the commercial to choose Active/On hold/Completed/Lost
   pipelineStage: "1",
   startDate: new Date().toISOString().slice(0, 10),
   endDate: "",
@@ -92,6 +93,7 @@ const statusLabel: Record<ProjectStatus, string> = {
   active: "Active",
   completed: "Completed",
   "on-hold": "On Hold",
+  lost: "Lost",
 };
 
 const statusStyle: Record<ProjectStatus, string> = {
@@ -101,12 +103,15 @@ const statusStyle: Record<ProjectStatus, string> = {
     "bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-400 dark:border-zinc-700/60",
   "on-hold":
     "bg-yellow-100 text-yellow-700 border border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800/50",
+  lost:
+    "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/60",
 };
 
 const statusDot: Record<ProjectStatus, string> = {
   active: "bg-emerald-400",
   completed: "bg-zinc-500",
   "on-hold": "bg-yellow-400",
+  lost: "bg-red-500",
 };
 
 const propertyTypeLabel: Record<PropertyType, string> = {
@@ -320,17 +325,21 @@ function Sel({
   value,
   onChange,
   children,
+  invalid,
 }: {
   value: string;
   onChange: (v: string) => void;
   children: React.ReactNode;
+  invalid?: boolean;
 }) {
   return (
     <div className="relative">
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`${INPUT} pr-8 appearance-none cursor-pointer`}
+        className={`${INPUT} pr-8 appearance-none cursor-pointer ${
+          invalid ? "border-red-500 ring-1 ring-red-500/40" : ""
+        }`}
       >
         {children}
       </select>
@@ -1484,6 +1493,7 @@ export function ClientDetail({
   // project modal (add | edit)
   const [projectModal, setProjectModal] = useState<ProjectModal>(null);
   const [pf, setPf] = useState<ProjectForm>(EMPTY_PROJECT);
+  const [pfError, setPfError] = useState(false); // true once a save was blocked by a missing field
 
   // client-level history (general notes + client changes)
   const [activities, setActivities] = useState<Activity[]>(
@@ -1807,16 +1817,30 @@ export function ClientDetail({
 
   function openAddProject() {
     setPf(EMPTY_PROJECT);
+    setPfError(false);
     setProjectModal({ mode: "add" });
   }
 
   function openEditProject(project: Project) {
     setPf(toProjectForm(project));
+    setPfError(false);
     setProjectModal({ mode: "edit", projectId: project.id });
   }
 
   async function saveProject() {
     if (!projectModal) return;
+
+    // Status is mandatory — block the save and flag the field if it's empty.
+    if (!pf.status) {
+      setPfError(true);
+      return;
+    }
+    // Keep status ↔ pipeline stage consistent for the optimistic UI too.
+    const reconciled = reconcileStageStatus(
+      (Number(pf.pipelineStage) || 1) as PipelineStage,
+      pf.status
+    );
+    const fields = { ...pf, status: pf.status };
 
     if (projectModal.mode === "add") {
       const optimistic: Project = {
@@ -1824,8 +1848,8 @@ export function ClientDetail({
         name: pf.name.trim() || "Untitled Project",
         description: pf.description.trim(),
         budget: Math.max(0, Number(pf.budget) || 0),
-        status: pf.status,
-        pipelineStage: (Number(pf.pipelineStage) || 1) as PipelineStage,
+        status: reconciled.status,
+        pipelineStage: reconciled.stage,
         startDate: pf.startDate || new Date().toISOString().slice(0, 10),
         endDate: pf.endDate || undefined,
         activities: [makeActivity("project_created", "Project created")],
@@ -1841,7 +1865,7 @@ export function ClientDetail({
       setClient((prev) => ({ ...prev, projects: [...prev.projects, optimistic] }));
       setProjectModal(null);
 
-      const saved = await createProject(client.id, pf);
+      const saved = await createProject(client.id, fields);
       setClient((prev) => ({
         ...prev,
         projects: prev.projects.map((p) =>
@@ -1859,8 +1883,8 @@ export function ClientDetail({
                 name: pf.name.trim() || "Untitled Project",
                 description: pf.description.trim(),
                 budget: Math.max(0, Number(pf.budget) || 0),
-                status: pf.status,
-                pipelineStage: (Number(pf.pipelineStage) || 1) as PipelineStage,
+                status: reconciled.status,
+                pipelineStage: reconciled.stage,
                 startDate: pf.startDate || new Date().toISOString().slice(0, 10),
                 endDate: pf.endDate || undefined,
                 contractor: pf.contractor.trim() || undefined,
@@ -1875,7 +1899,7 @@ export function ClientDetail({
         ),
       }));
       setProjectModal(null);
-      await updateProject(projectId, client.id, pf);
+      await updateProject(projectId, client.id, fields);
     }
   }
 
@@ -2559,14 +2583,24 @@ export function ClientDetail({
               <Field label="Status">
                 <Sel
                   value={pf.status}
+                  invalid={pfError && !pf.status}
                   onChange={(v) =>
-                    setPf((p) => ({ ...p, status: v as ProjectStatus }))
+                    setPf((p) => ({ ...p, status: v as ProjectStatus | "" }))
                   }
                 >
+                  <option value="" disabled>
+                    Select status…
+                  </option>
                   <option value="active">Active</option>
                   <option value="on-hold">On Hold</option>
                   <option value="completed">Completed</option>
+                  <option value="lost">Lost</option>
                 </Sel>
+                {pfError && !pf.status && (
+                  <p className="mt-1 text-xs text-red-500">
+                    Please pick a status before saving.
+                  </p>
+                )}
               </Field>
             </div>
 

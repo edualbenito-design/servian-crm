@@ -33,12 +33,15 @@ const statusStyle: Record<ProjectStatus, string> = {
     "bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-400 dark:border-zinc-700/60",
   "on-hold":
     "bg-yellow-100 text-yellow-700 border border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800/50",
+  lost:
+    "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/60",
 };
 
 const statusLabel: Record<ProjectStatus, string> = {
   active: "Active",
   completed: "Completed",
   "on-hold": "On Hold",
+  lost: "Lost",
 };
 
 const categoryDot: Record<ProjectCategory, string> = {

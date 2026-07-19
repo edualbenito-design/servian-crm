@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   SALESPEOPLE,
   followUpState,
+  projectValue,
   type Client,
   type PropertyType,
   type LeadSource,
@@ -72,8 +73,17 @@ function activeProjectCount(client: Client) {
   return client.projects.filter((p) => p.status === "active").length;
 }
 
-function clientBudget(client: Client) {
-  return client.projects.reduce((s, p) => s + p.budget, 0);
+// Won (accepted quotes) vs. pending (in the radar) money for a client.
+function clientMoney(client: Client) {
+  return client.projects.reduce(
+    (acc, p) => {
+      const v = projectValue(p);
+      acc.portfolio += v.portfolio;
+      acc.pending += v.pending;
+      return acc;
+    },
+    { portfolio: 0, pending: 0 }
+  );
 }
 
 // Direct WhatsApp link for a client, straight from the list. stopPropagation so
@@ -154,12 +164,22 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
     (n, c) => n + activeProjectCount(c),
     0
   );
-  const totalPortfolio = filtered.reduce((s, c) => s + clientBudget(c), 0);
+  const totals = filtered.reduce(
+    (acc, c) => {
+      const m = clientMoney(c);
+      acc.portfolio += m.portfolio;
+      acc.pending += m.pending;
+      return acc;
+    },
+    { portfolio: 0, pending: 0 }
+  );
+  const aed = (n: number) =>
+    new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
 
   return (
     <>
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 sm:mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-6 sm:mb-8">
         <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
           <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
             {filterBy ? "Filtered" : "Clients"}
@@ -180,8 +200,16 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
           <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
             Portfolio · AED
           </p>
-          <p className="text-lg sm:text-3xl font-bold text-(--text-primary) truncate">
-            {new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(totalPortfolio)}
+          <p className="text-lg sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400 truncate">
+            {aed(totals.portfolio)}
+          </p>
+        </div>
+        <div className="bg-(--card) border border-(--border) rounded-xl p-3 sm:p-5">
+          <p className="text-[10px] sm:text-xs font-medium text-(--text-muted) uppercase tracking-widest mb-1">
+            Pending · AED
+          </p>
+          <p className="text-lg sm:text-3xl font-bold text-amber-600 dark:text-amber-500 truncate">
+            {aed(totals.pending)}
           </p>
         </div>
       </div>
@@ -342,9 +370,16 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                         {client.phone} · {client.location}
                       </p>
                     </div>
-                    <span className="font-mono text-xs font-bold text-(--accent) shrink-0">
-                      {formatCurrency(clientBudget(client))}
-                    </span>
+                    <div className="flex flex-col items-end shrink-0 leading-tight">
+                      <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(clientMoney(client).portfolio)}
+                      </span>
+                      {clientMoney(client).pending > 0 && (
+                        <span className="font-mono text-[10px] text-amber-600 dark:text-amber-500">
+                          +{formatCurrency(clientMoney(client).pending)} pending
+                        </span>
+                      )}
+                    </div>
                     <WhatsAppButton phone={client.phone} />
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap pl-12">
@@ -410,6 +445,9 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-(--text-muted) uppercase tracking-wider">
                     Portfolio
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-(--text-muted) uppercase tracking-wider">
+                    Pending
                   </th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -530,11 +568,20 @@ export function ClientsTable({ clients }: { clients: Client[] }) {
                       </div>
                     </td>
 
-                    {/* Portfolio */}
+                    {/* Portfolio (won) + Pending (radar) */}
                     <td className="px-4 py-4">
-                      <span className="font-mono text-(--text-secondary) text-xs">
-                        {formatCurrency(clientBudget(client))}
+                      <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(clientMoney(client).portfolio)}
                       </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      {clientMoney(client).pending > 0 ? (
+                        <span className="font-mono text-xs text-amber-600 dark:text-amber-500">
+                          {formatCurrency(clientMoney(client).pending)}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs text-(--text-muted)">—</span>
+                      )}
                     </td>
 
                     {/* Action */}

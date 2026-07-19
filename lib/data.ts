@@ -1,6 +1,6 @@
 export type PropertyType = "villa" | "apartment" | "office" | "other";
 export type LeadSource = "referral" | "instagram" | "other";
-export type ProjectStatus = "active" | "completed" | "on-hold";
+export type ProjectStatus = "active" | "completed" | "on-hold" | "lost";
 export type PipelineStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 // Anyone who can manage or capture a client: 4 commercials + 2 managers.
@@ -297,7 +297,7 @@ export function advanceAlert(
   },
   today: string // YYYY-MM-DD (local)
 ): AdvanceAlert | null {
-  if (project.status === "completed") return null;
+  if (project.status === "completed" || project.status === "lost") return null;
   if (!project.startDate) return null;
   const accepted = project.quotes.filter((q) => q.status === "accepted");
   if (accepted.length === 0) return null;
@@ -457,6 +457,60 @@ export function daysSince(dateStr?: string, now: Date = new Date()): number | nu
   const then = new Date(dateStr).getTime();
   if (isNaN(then)) return null;
   return Math.floor((now.getTime() - then) / 86400000);
+}
+
+// ── Project status ↔ pipeline sync ───────────────────────────────────────────
+// Status (Active/On hold/Completed/Lost) is what the commercial states; the
+// pipeline stage is where the deal sits on the board. We keep the two terminal
+// states in sync so they can't contradict: Completed ⇄ stage 7, Lost ⇄ stage 8.
+
+// From a chosen status (+ intended funnel stage), the reconciled pair to persist.
+export function reconcileStageStatus(
+  stage: PipelineStage,
+  status: ProjectStatus
+): { stage: PipelineStage; status: ProjectStatus } {
+  if (status === "completed") return { stage: COMPLETED_STAGE, status };
+  if (status === "lost") return { stage: LOST_STAGE, status };
+  // active / on-hold can't sit in an outcome column → pull back to "on site".
+  return { stage: (stage >= COMPLETED_STAGE ? ONSITE_STAGE : stage) as PipelineStage, status };
+}
+
+// From a pipeline move, the status it implies. Only outcome stages force a status;
+// a live-funnel move just revives a previously closed/lost deal to Active.
+export function statusFromStage(stage: PipelineStage, current: ProjectStatus): ProjectStatus {
+  if (stage === COMPLETED_STAGE) return "completed";
+  if (stage === LOST_STAGE || stage === GHOSTING_STAGE) return "lost";
+  return current === "completed" || current === "lost" ? "active" : current;
+}
+
+// ── Money view: closed (won) vs. pending (in the radar), per project ──────────
+// Portfolio = accepted-quote money (0 if none accepted). Pending = the value
+// still in play for an Active/On-hold project with nothing accepted yet: the
+// LOWEST live quote (conservative), or the project budget if not yet quoted.
+// Lost → 0/0. Completed → its value in Portfolio.
+export function projectValue(p: {
+  status: ProjectStatus;
+  budget: number;
+  quotes: { status: QuoteStatus; items: QuoteItem[]; vatRate: number; discountPct?: number }[];
+}): { portfolio: number; pending: number } {
+  if (p.status === "lost") return { portfolio: 0, pending: 0 };
+
+  const acceptedTotals = p.quotes
+    .filter((q) => q.status === "accepted")
+    .map((q) => quoteTotals(q).total);
+  if (acceptedTotals.length > 0) {
+    return { portfolio: acceptedTotals.reduce((s, t) => s + t, 0), pending: 0 };
+  }
+
+  // Completed without an accepted quote → count its budget as closed.
+  if (p.status === "completed") return { portfolio: p.budget, pending: 0 };
+
+  // Active / on-hold, nothing accepted → radar: lowest live quote, else budget.
+  const liveTotals = p.quotes
+    .filter((q) => q.status === "draft" || q.status === "sent")
+    .map((q) => quoteTotals(q).total);
+  const pending = liveTotals.length > 0 ? Math.min(...liveTotals) : p.budget;
+  return { portfolio: 0, pending };
 }
 
 // How long an open deal has sat with no plan and no forward movement. Returns

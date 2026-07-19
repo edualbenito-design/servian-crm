@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
-import { PIPELINE_STAGES } from "@/lib/data";
+import { PIPELINE_STAGES, reconcileStageStatus, statusFromStage } from "@/lib/data";
 import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertRole } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
@@ -346,23 +346,35 @@ export async function createClient(fields: ClientFields): Promise<string> {
 
 export async function createProject(clientId: string, fields: ProjectFields): Promise<Project> {
   const db = serverClient();
-  const { data, error } = await db
+  // Keep status and pipeline stage consistent (Completed→7, Lost→8).
+  const { stage, status } = reconcileStageStatus(
+    (Number(fields.pipelineStage) || 1) as PipelineStage,
+    fields.status
+  );
+  const nowIso = new Date().toISOString();
+  const isOutcome = stage >= 6 && stage <= 9;
+  const base = {
+    client_id: clientId,
+    name: fields.name.trim() || "Untitled Project",
+    description: fields.description.trim(),
+    budget: Math.max(0, Number(fields.budget) || 0),
+    status,
+    pipeline_stage: stage,
+    start_date: fields.startDate || new Date().toISOString().slice(0, 10),
+    end_date: fields.endDate || null,
+    contractor: fields.contractor.trim() || null,
+    team_members: parseLines(fields.teamMembers),
+    suppliers: parseSuppliers(fields.suppliers),
+  };
+  // Try with the stage-date columns; retry without if they aren't there yet.
+  let { data, error } = await db
     .from("projects")
-    .insert({
-      client_id: clientId,
-      name: fields.name.trim() || "Untitled Project",
-      description: fields.description.trim(),
-      budget: Math.max(0, Number(fields.budget) || 0),
-      status: fields.status,
-      pipeline_stage: Number(fields.pipelineStage) || 1,
-      start_date: fields.startDate || new Date().toISOString().slice(0, 10),
-      end_date: fields.endDate || null,
-      contractor: fields.contractor.trim() || null,
-      team_members: parseLines(fields.teamMembers),
-      suppliers: parseSuppliers(fields.suppliers),
-    })
+    .insert({ ...base, stage_changed_at: nowIso, closed_at: isOutcome ? nowIso : null })
     .select()
     .single();
+  if (error) {
+    ({ data, error } = await db.from("projects").insert(base).select().single());
+  }
 
   if (error) throw new Error(error.message);
   await logActivity(
@@ -397,27 +409,66 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
 
 export async function updateProject(projectId: string, clientId: string, fields: ProjectFields): Promise<void> {
   const db = serverClient();
-  const { error } = await db
+
+  // Current stage/close date, to detect an actual pipeline move.
+  const { data: cur } = await db
     .from("projects")
-    .update({
-      name: fields.name.trim() || "Untitled Project",
-      description: fields.description.trim(),
-      budget: Math.max(0, Number(fields.budget) || 0),
-      status: fields.status,
-      pipeline_stage: Number(fields.pipelineStage) || 1,
-      start_date: fields.startDate || new Date().toISOString().slice(0, 10),
-      end_date: fields.endDate || null,
-      contractor: fields.contractor.trim() || null,
-      team_members: parseLines(fields.teamMembers),
-      suppliers: parseSuppliers(fields.suppliers),
-    })
-    .eq("id", projectId);
+    .select("pipeline_stage")
+    .eq("id", projectId)
+    .maybeSingle();
+  const { data: curClose } = await db
+    .from("projects")
+    .select("closed_at")
+    .eq("id", projectId)
+    .maybeSingle();
+  const currentStage = ((cur as { pipeline_stage?: number } | null)?.pipeline_stage ?? 1) as PipelineStage;
+
+  // Keep status and pipeline stage consistent (Completed→7, Lost→8).
+  const { stage, status } = reconcileStageStatus(
+    (Number(fields.pipelineStage) || 1) as PipelineStage,
+    fields.status
+  );
+  const stageMoved = stage !== currentStage;
+  const nowIso = new Date().toISOString();
+  const isOutcome = stage >= 6 && stage <= 9;
+  const closedAt = isOutcome
+    ? ((curClose as { closed_at?: string | null } | null)?.closed_at ?? nowIso)
+    : null;
+
+  const base = {
+    name: fields.name.trim() || "Untitled Project",
+    description: fields.description.trim(),
+    budget: Math.max(0, Number(fields.budget) || 0),
+    status,
+    pipeline_stage: stage,
+    start_date: fields.startDate || new Date().toISOString().slice(0, 10),
+    end_date: fields.endDate || null,
+    contractor: fields.contractor.trim() || null,
+    team_members: parseLines(fields.teamMembers),
+    suppliers: parseSuppliers(fields.suppliers),
+  };
+  // Only touch the stage-date columns when the stage actually moved (so a plain
+  // edit doesn't reset idle tracking). Retry without them if not migrated yet.
+  let error;
+  if (stageMoved) {
+    ({ error } = await db
+      .from("projects")
+      .update({ ...base, stage_changed_at: nowIso, closed_at: closedAt })
+      .eq("id", projectId));
+    if (error) {
+      ({ error } = await db.from("projects").update(base).eq("id", projectId));
+    }
+  } else {
+    ({ error } = await db.from("projects").update(base).eq("id", projectId));
+  }
 
   if (error) throw new Error(error.message);
   await logActivity(
     clientId,
     "project_updated",
-    `Project details updated`,
+    stageMoved
+      ? `Project updated — moved to Stage ${stage} (${PIPELINE_STAGES[stage]})`
+      : `Project details updated`,
     projectId
   );
   revalidatePath(`/clients/${clientId}`);
@@ -427,10 +478,10 @@ export async function updateProject(projectId: string, clientId: string, fields:
 export async function updatePipelineStage(projectId: string, stage: PipelineStage): Promise<void> {
   const db = serverClient();
 
-  // Base lookup (always-present columns) for the timeline entry + revalidation.
+  // Base lookup (always-present columns) for the timeline entry + status sync.
   const { data: proj } = await db
     .from("projects")
-    .select("name, client_id")
+    .select("name, client_id, status")
     .eq("id", projectId)
     .single();
 
@@ -448,17 +499,22 @@ export async function updatePipelineStage(projectId: string, stage: PipelineStag
   const closedAt = isOutcome
     ? ((prev as { closed_at?: string | null } | null)?.closed_at ?? nowIso)
     : null;
+  // Keep the project status in step with the board (Completed/Lost, or revive).
+  const status = statusFromStage(
+    stage,
+    ((proj as { status?: string } | null)?.status as ProjectStatus) ?? "active"
+  );
 
   // Stamp stage_changed_at on every move. Retry without the new columns if the
   // migration hasn't been applied yet (§7.5, resilient — deploy before SQL).
   let { error } = await db
     .from("projects")
-    .update({ pipeline_stage: stage, stage_changed_at: nowIso, closed_at: closedAt })
+    .update({ pipeline_stage: stage, status, stage_changed_at: nowIso, closed_at: closedAt })
     .eq("id", projectId);
   if (error) {
     ({ error } = await db
       .from("projects")
-      .update({ pipeline_stage: stage })
+      .update({ pipeline_stage: stage, status })
       .eq("id", projectId));
   }
 
