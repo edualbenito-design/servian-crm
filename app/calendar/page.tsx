@@ -1,4 +1,4 @@
-import { getFollowUpAgenda, getAdvanceAlerts } from "@/lib/db";
+import { getFollowUpAgenda, getAdvanceAlerts, getCollections } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { icalFeedUrl } from "@/lib/ical";
 import { CalendarView } from "./CalendarView";
@@ -8,6 +8,7 @@ export default async function CalendarPage() {
   const scope = profile?.isManager ? undefined : profile?.name;
   const agenda = await getFollowUpAgenda(scope);
   const alerts = await getAdvanceAlerts(scope);
+  const { expectedPayments } = await getCollections(scope);
 
   // Pending tasks show on their due day; done ones on the day they were done.
   const pending = agenda
@@ -43,11 +44,21 @@ export default async function CalendarPage() {
 
   const feedUrl = profile?.name ? icalFeedUrl(profile.name) : "";
 
+  const expected = expectedPayments.map((e) => ({
+    clientId: e.clientId,
+    clientName: e.clientName,
+    projectName: e.projectName,
+    label: e.label,
+    date: e.date,
+    amount: e.amount,
+  }));
+
   return (
     <CalendarView
       pending={pending}
       done={done}
       alerts={alerts}
+      expected={expected}
       isManager={profile?.isManager ?? false}
       currentUserName={profile?.name ?? ""}
       feedUrl={feedUrl}

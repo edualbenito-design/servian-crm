@@ -110,10 +110,20 @@ function WhatsApp({ phone }: { phone: string }) {
   );
 }
 
+export type ExpectedItem = {
+  clientId: string;
+  clientName: string;
+  projectName: string;
+  label: string;
+  date: string; // YYYY-MM-DD
+  amount: number;
+};
+
 export function CalendarView({
   pending: initialPending,
   done: initialDone,
   alerts,
+  expected,
   isManager,
   currentUserName,
   feedUrl,
@@ -121,6 +131,7 @@ export function CalendarView({
   pending: PendingItem[];
   done: DoneItem[];
   alerts: Alert[];
+  expected: ExpectedItem[];
   isManager: boolean;
   currentUserName: string;
   feedUrl: string;
@@ -322,6 +333,54 @@ export function CalendarView({
 
       {/* Subscribe your phone to this feed */}
       {feedUrl && <IcalSubscribe url={feedUrl} />}
+
+      {/* Expected payments in the viewed month */}
+      {(() => {
+        const monthKey = `${view.year}-${String(view.month + 1).padStart(2, "0")}`;
+        const items = expected
+          .filter((e) => e.date.slice(0, 7) === monthKey)
+          .sort((a, b) => (a.date < b.date ? -1 : 1));
+        if (items.length === 0) return null;
+        const aed = (n: number) =>
+          "AED " + new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
+        const total = items.reduce((s, e) => s + e.amount, 0);
+        return (
+          <div className="mb-5 rounded-xl border border-emerald-300/50 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-900/10 p-4">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h2 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                💰 Expected payments this month
+              </h2>
+              <span className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+                {aed(total)}
+              </span>
+            </div>
+            <ul className="divide-y divide-emerald-200/50 dark:divide-emerald-800/30">
+              {items.map((e, i) => {
+                const overdue = e.date < today;
+                return (
+                  <li key={`${e.clientId}-${e.date}-${i}`} className="py-1.5">
+                    <Link
+                      href={`/clients/${e.clientId}`}
+                      className="flex items-center justify-between gap-2 group"
+                    >
+                      <span className="min-w-0 truncate text-sm text-(--text-primary) group-hover:text-(--accent)">
+                        <span className={`font-mono text-xs ${overdue ? "text-red-500 font-semibold" : "text-(--text-muted)"}`}>
+                          {new Date(e.date + "T00:00:00").toLocaleDateString("en-AE", { day: "numeric", month: "short" })}
+                        </span>{" "}
+                        · {e.clientName}
+                        <span className="text-(--text-muted)"> — {e.label}</span>
+                      </span>
+                      <span className="shrink-0 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        {aed(e.amount)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Overdue follow-ups — pending tasks whose date already passed. */}
       {(() => {

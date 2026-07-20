@@ -221,8 +221,9 @@ export function CollectionsView({
   }
 
   const filtered = scopedReceivables.filter((r) => {
-    if (filter === "overdue" && r.ageDays <= OVERDUE_DAYS) return false;
-    if (filter === "current" && r.ageDays > OVERDUE_DAYS) return false;
+    const isOverdue = r.overdueAmount > 0.5;
+    if (filter === "overdue" && !isOverdue) return false;
+    if (filter === "current" && isOverdue) return false;
     return true;
   });
 
@@ -256,7 +257,7 @@ export function CollectionsView({
         />
         <Kpi label="Open receivables" value={String(summary.count)} />
         <Kpi
-          label={`Overdue >${OVERDUE_DAYS}d · AED`}
+          label={`Overdue · AED`}
           value={money(summary.overdueAmount)}
           tone={summary.overdueAmount > 0 ? "danger" : "default"}
           active={filter === "overdue"}
@@ -552,7 +553,7 @@ export function CollectionsView({
                     : "bg-(--surface) border border-(--border) text-(--text-secondary) hover:text-(--text-primary)"
                 }`}
               >
-                {f === "all" ? "All" : f === "current" ? "Current" : `Overdue >${OVERDUE_DAYS}d`}
+                {f === "all" ? "All" : f === "current" ? "Current" : "Overdue"}
               </button>
             ))}
             <span className="text-xs text-(--text-muted)">

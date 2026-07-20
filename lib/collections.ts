@@ -17,8 +17,9 @@ export function collectionsSummary(receivables: Receivable[]): CollectionsSummar
   let overdueCount = 0;
   for (const r of receivables) {
     totalOutstanding += r.balance;
-    if (r.ageDays > OVERDUE_DAYS) {
-      overdueAmount += r.balance;
+    // Plan-aware overdue (falls back to age-based inside getCollections).
+    if (r.overdueAmount > 0.5) {
+      overdueAmount += r.overdueAmount;
       overdueCount++;
     }
   }

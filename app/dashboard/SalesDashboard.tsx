@@ -7,6 +7,7 @@ import type { QuoteStats, MonthMovement } from "@/lib/db";
 import { ConversionCard } from "./ConversionCard";
 import { ThisMonthCard } from "./ThisMonthCard";
 import { CloseTimeCard } from "./CloseTimeCard";
+import { ExpectedIncomeCard } from "./ExpectedIncomeCard";
 
 function num(n: number) {
   return new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
@@ -38,12 +39,14 @@ export function SalesDashboard({
   name,
   quoteStats,
   movement,
+  expected,
   monthPicker,
 }: {
   clients: Client[];
   name: string;
   quoteStats: QuoteStats;
   movement: MonthMovement[];
+  expected: { date: string; amount: number }[];
   monthPicker?: ReactNode;
 }) {
   const projects = clients.flatMap((c) => c.projects);
@@ -214,9 +217,10 @@ export function SalesDashboard({
         <ThisMonthCard movement={movement} />
       </div>
 
-      {/* Time to close */}
-      <div className="mt-6">
+      {/* Time to close + expected income */}
+      <div className="grid lg:grid-cols-2 gap-6 mt-6">
         <CloseTimeCard close={close} />
+        <ExpectedIncomeCard expected={expected} />
       </div>
     </div>
   );

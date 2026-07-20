@@ -93,6 +93,39 @@ function alertsSectionHtml(alerts: AlertInbox[]): string {
     </div>`;
 }
 
+export interface ExpectedDue {
+  clientId: string;
+  clientName: string;
+  projectName: string;
+  date: string; // YYYY-MM-DD
+  amount: number;
+}
+
+// Expected payments that are due today or already past — a nudge to chase them.
+function expectedSectionHtml(items: ExpectedDue[]): string {
+  if (items.length === 0) return "";
+  const money = (n: number) =>
+    "AED " + new Intl.NumberFormat("en-AE", { maximumFractionDigits: 0 }).format(n);
+  const rows = items
+    .map(
+      (e) => `
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #d7ecdd;">
+          <a href="${APP_URL}/clients/${e.clientId}" style="color:#111;text-decoration:none;font-weight:600;font-size:15px;">${e.clientName}</a>
+          <span style="color:#777;"> · ${e.projectName}</span>
+          <div style="color:#0f766e;font-size:13px;margin-top:2px;">Expected ${e.date}</div>
+        </td>
+        <td style="padding:12px 0;border-bottom:1px solid #d7ecdd;text-align:right;white-space:nowrap;font-weight:700;color:#0f766e;">${money(e.amount)}</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <div style="background:#effaf3;border:1px solid #c8ecd6;border-radius:10px;padding:4px 16px 8px;margin:0 0 20px;">
+      <p style="font-size:13px;font-weight:700;color:#0f766e;margin:12px 0 4px;">💰 ${items.length} payment${items.length === 1 ? "" : "s"} due to collect</p>
+      <table style="width:100%;border-collapse:collapse;">${rows}</table>
+    </div>`;
+}
+
 function shell(name: string, body: string): string {
   return `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111;">
@@ -104,20 +137,26 @@ function shell(name: string, body: string): string {
   </div>`;
 }
 
-function followUpEmailHtml(name: string, due: Client[], alerts: AlertInbox[] = []): string {
+function followUpEmailHtml(
+  name: string,
+  due: Client[],
+  alerts: AlertInbox[] = [],
+  expected: ExpectedDue[] = []
+): string {
   const alertsBlock = alertsSectionHtml(alerts);
+  const expectedBlock = expectedSectionHtml(expected);
   if (due.length === 0) {
-    // Alerts-only email (no follow-ups due today).
+    // No follow-ups today, but alerts and/or payments to chase.
     return shell(
       name,
-      `${alertsBlock}
-       <p style="color:#555;font-size:14px;margin:0 0 20px;">No follow-ups due today — but the alert${alerts.length === 1 ? "" : "s"} above need${alerts.length === 1 ? "s" : ""} your attention. Tap a name to open the client.</p>`
+      `${alertsBlock}${expectedBlock}
+       <p style="color:#555;font-size:14px;margin:0 0 20px;">No follow-ups due today — the items above need your attention. Tap a name to open the client.</p>`
     );
   }
   const rows = due.map(rowHtml).join("");
   return shell(
     name,
-    `${alertsBlock}
+    `${alertsBlock}${expectedBlock}
      <p style="color:#555;font-size:14px;margin:0 0 20px;">You have <strong>${due.length}</strong> follow-up${due.length === 1 ? "" : "s"} to handle today. Tap a name to open the client.</p>
      <table style="width:100%;border-collapse:collapse;">${rows}</table>`
   );
@@ -194,17 +233,20 @@ export async function sendFollowUpEmail(
   to: string,
   name: string,
   due: Client[],
-  alerts: AlertInbox[] = []
+  alerts: AlertInbox[] = [],
+  expected: ExpectedDue[] = []
 ) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const subject =
-    alerts.length > 0 && due.length === 0
+    due.length === 0 && alerts.length > 0
       ? `⚠️ ${alerts.length} manager alert${alerts.length === 1 ? "" : "s"} for you`
-      : `☀️ Your follow-ups today (${due.length})`;
+      : due.length === 0 && expected.length > 0
+        ? `💰 ${expected.length} payment${expected.length === 1 ? "" : "s"} to collect`
+        : `☀️ Your follow-ups today (${due.length})`;
   return resend.emails.send({
     from: FROM,
     to,
     subject,
-    html: followUpEmailHtml(name, due, alerts),
+    html: followUpEmailHtml(name, due, alerts, expected),
   });
 }

@@ -1,6 +1,6 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, paymentSummary, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
-import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertStatus, AlertRole } from "./data";
+import { quoteTotals, paymentSummary, paymentPlanStatus, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
+import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, PaymentPlanItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertStatus, AlertRole } from "./data";
 
 type DbQuote = {
   id: string;
@@ -19,6 +19,7 @@ type DbQuote = {
   invoiced_at?: string | null;
   discount_pct?: number | null;
   discount_reason?: string | null;
+  payment_plan?: PaymentPlanItem[] | null;
 };
 
 type DbPayment = {
@@ -106,6 +107,7 @@ function toQuote(q: DbQuote): Quote {
     sentAt: q.sent_at ?? undefined,
     createdAt: q.created_at,
     payments: [],
+    paymentPlan: q.payment_plan ?? [],
     invoiceNumber: q.invoice_number ?? undefined,
     invoicedAt: q.invoiced_at ?? undefined,
   };
@@ -535,6 +537,11 @@ export interface Receivable {
   sinceDate: string; // date used for ageing (invoice date, else issue date)
   ageDays: number;
   lastPaymentDate?: string;
+  // Overdue money: plan-aware when a payment plan exists (installment dates
+  // passed but unpaid), otherwise age-based (balance older than 30 days).
+  overdueAmount: number;
+  hasPlan: boolean;
+  nextDueDate?: string; // next expected installment still owed (if a plan exists)
 }
 
 // A single payment already collected, enriched with client/project so the
@@ -553,11 +560,26 @@ export interface CollectedPayment {
   recordedBy?: string;
 }
 
+// One still-owed installment from a quote's payment plan, dated when it's due.
+export interface ExpectedPayment {
+  quoteId: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  projectId: string;
+  projectName: string;
+  assignedTo: string;
+  label: string;
+  date: string; // YYYY-MM-DD expected
+  amount: number; // remaining owed on this installment
+}
+
 export interface Collections {
   receivables: Receivable[];
   collectedThisMonth: number; // sum of payments recorded in the current month
   collectedByMonth: { month: string; amount: number }[]; // last 6 months, old→new
   collectedPayments: CollectedPayment[]; // individual payments (for drill-down)
+  expectedPayments: ExpectedPayment[]; // still-owed plan installments (calendar/forecast)
 }
 
 type DbQuoteLite = {
@@ -571,6 +593,7 @@ type DbQuoteLite = {
   issue_date: string;
   invoice_number: string | null;
   invoiced_at: string | null;
+  payment_plan?: PaymentPlanItem[] | null;
 };
 
 type DbClientLite = {
@@ -592,7 +615,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     .select("id, name, phone, assigned_to, deleted_at, projects(id, name, deleted_at)");
   if (assignedTo) cq = cq.eq("assigned_to", assignedTo);
   const { data: clientsRaw, error: cErr } = await cq;
-  if (cErr || !clientsRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [], collectedPayments: [] };
+  if (cErr || !clientsRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [], collectedPayments: [], expectedPayments: [] };
 
   const clientById = new Map<string, DbClientLite>();
   const projectName = new Map<string, string>();
@@ -614,7 +637,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
   {
     const r = await db
       .from("quotes")
-      .select(`${QCOLS}, discount_pct`)
+      .select(`${QCOLS}, discount_pct, payment_plan`)
       .eq("status", "accepted");
     quotesRaw = r.data as DbQuoteLite[] | null;
     qErr = r.error;
@@ -624,7 +647,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
     quotesRaw = r.data as DbQuoteLite[] | null;
     qErr = r.error;
   }
-  if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [], collectedPayments: [] };
+  if (qErr || !quotesRaw) return { receivables: [], collectedThisMonth: 0, collectedByMonth: [], collectedPayments: [], expectedPayments: [] };
 
   // Payments (fail soft if the table / newer columns aren't there yet).
   type DbPayLite = {
@@ -698,7 +721,10 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const AGE_OVERDUE_DAYS = 30; // fallback when there's no payment plan
   const receivables: Receivable[] = [];
+  const expectedPayments: ExpectedPayment[] = [];
   for (const q of quotesRaw as DbQuoteLite[]) {
     const client = clientById.get(q.client_id);
     if (!client) continue; // archived client, or outside this salesperson's scope
@@ -718,6 +744,35 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
       ? 0
       : Math.max(0, Math.round((today.getTime() - since.getTime()) / 86400000));
 
+    // Overdue: plan-aware when a plan exists, else age-based fallback.
+    const planItems = q.payment_plan ?? [];
+    const hasPlan = planItems.length > 0;
+    const ps = paymentPlanStatus(planItems, paid, todayStr);
+    const overdueAmount = hasPlan
+      ? Math.min(balance, Math.round(ps.overdue * 100) / 100)
+      : ageDays > AGE_OVERDUE_DAYS
+        ? balance
+        : 0;
+
+    // Still-owed installments → expected payments (calendar / forecast / email).
+    if (hasPlan) {
+      for (const l of ps.lines) {
+        if (l.remaining <= 0.5 || !l.expectedDate) continue;
+        expectedPayments.push({
+          quoteId: q.id,
+          clientId: q.client_id,
+          clientName: client.name,
+          clientPhone: client.phone,
+          projectId: q.project_id,
+          projectName: projectName.get(q.project_id) ?? "Project",
+          assignedTo: client.assigned_to,
+          label: l.label,
+          date: l.expectedDate,
+          amount: Math.round(l.remaining * 100) / 100,
+        });
+      }
+    }
+
     receivables.push({
       quoteId: q.id,
       number: q.number,
@@ -735,12 +790,15 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
       sinceDate,
       ageDays,
       lastPaymentDate: lastPayByQuote.get(q.id),
+      overdueAmount,
+      hasPlan,
+      nextDueDate: hasPlan ? ps.nextDate : undefined,
     });
   }
 
   // Biggest balances first (that's where the money is).
   receivables.sort((a, b) => b.balance - a.balance);
-  return { receivables, collectedThisMonth, collectedByMonth, collectedPayments };
+  return { receivables, collectedThisMonth, collectedByMonth, collectedPayments, expectedPayments };
 }
 
 // ── Client lifetime value & reactivation ────────────────────────────────────────

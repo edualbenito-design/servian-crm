@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES, reconcileStageStatus, statusFromStage } from "@/lib/data";
-import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertRole } from "@/lib/data";
+import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, PaymentPlanItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertRole } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
 // failure should never block the main write.
@@ -857,6 +857,7 @@ export async function createQuote(
     sentAt: data.sent_at ?? undefined,
     createdAt: data.created_at,
     payments: [],
+    paymentPlan: [],
   };
 }
 
@@ -1320,6 +1321,34 @@ export async function markAlertsRead(clientId: string): Promise<void> {
   const db = serverClient();
   const col = profile.isManager ? "manager_read_at" : "sales_read_at";
   await db.from("alerts").update({ [col]: new Date().toISOString() }).eq("client_id", clientId);
+}
+
+// Save the expected payment schedule for an accepted quote. Owner or manager.
+export async function setPaymentPlan(
+  clientId: string,
+  quoteId: string,
+  items: PaymentPlanItem[]
+): Promise<void> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const clean = items
+    .filter((i) => i.expectedDate)
+    .map((i) => ({
+      id: i.id,
+      label: (i.label || "Payment").trim(),
+      expectedDate: i.expectedDate,
+      amount: Math.max(0, Number(i.amount) || 0),
+    }));
+  const { error } = await db
+    .from("quotes")
+    .update({ payment_plan: clean })
+    .eq("id", quoteId)
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/collections");
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
 }
 
 export async function uploadProjectFile(

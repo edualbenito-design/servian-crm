@@ -202,9 +202,20 @@ export interface Quote {
   createdAt: string;
   // Payments recorded against this (accepted) quote
   payments: Payment[];
+  // Expected payment schedule (tentative dates + amounts) so overdue only fires
+  // once a plan date has actually passed. Empty = no plan (age-based fallback).
+  paymentPlan: PaymentPlanItem[];
   // Invoice issuance (an accepted quote issued as a TAX INVOICE)
   invoiceNumber?: string;
   invoicedAt?: string;
+}
+
+// One tentative installment in a quote's expected payment schedule.
+export interface PaymentPlanItem {
+  id: string;
+  label: string; // e.g. "Advance", "Mid-project", "Final"
+  expectedDate: string; // YYYY-MM-DD
+  amount: number; // AED expected for this installment
 }
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
@@ -227,6 +238,75 @@ export function paymentSummary(
   const pctPaid =
     total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : paid > 0 ? 100 : 0;
   return { paid, balance, status, pctPaid, pctPending: 100 - pctPaid };
+}
+
+// ── Expected payment plan ────────────────────────────────────────────────────
+// Splits a plan against how much has been paid: each installment gets covered in
+// date order, so "overdue" = installments whose date already passed and aren't
+// yet covered by payments. Also surfaces the next installment still owed.
+export interface PaymentPlanLine extends PaymentPlanItem {
+  covered: number; // AED of this installment already paid
+  remaining: number; // AED still owed on it
+  past: boolean; // its expected date is before today
+  paidFull: boolean;
+}
+export interface PaymentPlanStatus {
+  lines: PaymentPlanLine[];
+  overdue: number; // owed on installments whose date already passed
+  overdueDate?: string; // earliest passed-but-unpaid installment date
+  nextDate?: string; // next upcoming installment still owed
+  nextAmount: number; // amount still owed on that next installment
+  totalPlanned: number;
+}
+
+export function paymentPlanStatus(
+  items: PaymentPlanItem[],
+  paid: number,
+  today: string
+): PaymentPlanStatus {
+  const sorted = [...items].sort((a, b) => (a.expectedDate < b.expectedDate ? -1 : 1));
+  let cumulative = 0;
+  let overdue = 0;
+  let overdueDate: string | undefined;
+  let nextDate: string | undefined;
+  let nextAmount = 0;
+  const lines: PaymentPlanLine[] = sorted.map((it) => {
+    const before = cumulative;
+    cumulative += it.amount;
+    const covered = Math.min(it.amount, Math.max(0, paid - before));
+    const remaining = Math.max(0, it.amount - covered);
+    const past = !!it.expectedDate && it.expectedDate < today;
+    if (remaining > 0.001 && past) {
+      overdue += remaining;
+      if (!overdueDate) overdueDate = it.expectedDate;
+    }
+    if (remaining > 0.001 && !past && !nextDate) {
+      nextDate = it.expectedDate;
+      nextAmount = remaining;
+    }
+    return { ...it, covered, remaining, past, paidFull: remaining <= 0.001 };
+  });
+  return { lines, overdue, overdueDate, nextDate, nextAmount, totalPlanned: cumulative };
+}
+
+// A sensible starting plan for a balance: Advance now, Mid in ~2 weeks, Final in
+// ~4 weeks (50/30/20). The team then edits dates/amounts to reality.
+export function suggestedPaymentPlan(balance: number, today: string): PaymentPlanItem[] {
+  const base = new Date(today + "T00:00:00");
+  const plus = (days: number) => {
+    const d = new Date(base);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const round = (n: number) => Math.round(n);
+  const advance = round(balance * 0.5);
+  const mid = round(balance * 0.3);
+  const final = Math.max(0, balance - advance - mid);
+  return [
+    { id: `pp_${Date.now()}_1`, label: "Advance", expectedDate: today, amount: advance },
+    { id: `pp_${Date.now()}_2`, label: "Mid-project", expectedDate: plus(14), amount: mid },
+    { id: `pp_${Date.now()}_3`, label: "Final", expectedDate: plus(28), amount: final },
+  ];
 }
 
 export type FollowUpState = "overdue" | "today" | "upcoming" | "none";

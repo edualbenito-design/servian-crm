@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getClients, getAlertsForUser, type AlertInbox } from "@/lib/db";
+import { getClients, getAlertsForUser, getCollections, type AlertInbox } from "@/lib/db";
+import type { ExpectedDue } from "@/lib/email";
 import {
   recipientProfiles,
   dueFollowUps,
@@ -70,26 +71,44 @@ export async function GET(request: Request) {
   const emailByName = new Map(recipients.map((r) => [r.name, r.email]));
   const byPerson = groupByPerson(dueFollowUps(clients));
 
-  // Open alerts per commercial (managers raise them for sales).
+  // Open alerts + expected payments due (today or past) per commercial.
+  const todayStr = new Date().toISOString().slice(0, 10);
   const alertsByName = new Map<string, AlertInbox[]>();
+  const expectedByName = new Map<string, ExpectedDue[]>();
   for (const r of recipients) {
     if (r.role !== "sales") continue;
     const a = await getAlertsForUser(r.name, false);
     if (a.length) alertsByName.set(r.name, a);
+    const { expectedPayments } = await getCollections(r.name);
+    const due = expectedPayments
+      .filter((e) => e.date <= todayStr)
+      .map((e) => ({
+        clientId: e.clientId,
+        clientName: e.clientName,
+        projectName: e.projectName,
+        date: e.date,
+        amount: e.amount,
+      }));
+    if (due.length) expectedByName.set(r.name, due);
   }
 
-  const names = new Set<string>([...byPerson.keys(), ...alertsByName.keys()]);
+  const names = new Set<string>([
+    ...byPerson.keys(),
+    ...alertsByName.keys(),
+    ...expectedByName.keys(),
+  ]);
   for (const name of names) {
     const list = byPerson.get(name) ?? [];
     const alerts = alertsByName.get(name) ?? [];
+    const expected = expectedByName.get(name) ?? [];
     const email = emailByName.get(name);
     if (!email) {
       results.push({ name, count: list.length, sent: false, error: "no email" });
       continue;
     }
     try {
-      const res = await sendFollowUpEmail(email, name, list, alerts);
-      results.push({ name, email, count: list.length + alerts.length, sent: !res.error, error: res.error?.message });
+      const res = await sendFollowUpEmail(email, name, list, alerts, expected);
+      results.push({ name, email, count: list.length + alerts.length + expected.length, sent: !res.error, error: res.error?.message });
     } catch (e) {
       results.push({ name, email, count: list.length, sent: false, error: e instanceof Error ? e.message : "send failed" });
     }

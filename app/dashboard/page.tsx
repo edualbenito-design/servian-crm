@@ -1,4 +1,4 @@
-import { getClients, getQuoteStats, getMonthlyMovement, getReportMonths, getMonthlyReport } from "@/lib/db";
+import { getClients, getQuoteStats, getMonthlyMovement, getReportMonths, getMonthlyReport, getCollections } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import {
   computeKpis,
@@ -14,6 +14,7 @@ import { SalesDashboard } from "./SalesDashboard";
 import { ConversionCard } from "./ConversionCard";
 import { ThisMonthCard } from "./ThisMonthCard";
 import { CloseTimeCard } from "./CloseTimeCard";
+import { ExpectedIncomeCard } from "./ExpectedIncomeCard";
 import { MonthPicker } from "./MonthPicker";
 import { MonthlyReportView } from "./MonthlyReportView";
 
@@ -107,12 +108,14 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
     const myClients = await getClients(profile.name);
     const myQuoteStats = await getQuoteStats(profile.name);
     const myMovement = await getMonthlyMovement(profile.name);
+    const { expectedPayments: myExpected } = await getCollections(profile.name);
     return (
       <SalesDashboard
         clients={myClients}
         name={profile.name}
         quoteStats={myQuoteStats}
         movement={myMovement}
+        expected={myExpected.map((e) => ({ date: e.date, amount: e.amount }))}
         monthPicker={<MonthPicker months={reportMonths} value="" />}
       />
     );
@@ -121,6 +124,7 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
   const clients = await getClients();
   const quoteStats = await getQuoteStats();
   const movement = await getMonthlyMovement();
+  const { expectedPayments } = await getCollections();
   const conversion = conversionFunnel(clients);
 
   const kpis = computeKpis(clients);
@@ -262,6 +266,12 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
         <ConversionCard conversion={conversion} quoteStats={quoteStats} />
         <ThisMonthCard movement={movement} />
+      </div>
+
+      <div className="mt-6">
+        <ExpectedIncomeCard
+          expected={expectedPayments.map((e) => ({ date: e.date, amount: e.amount }))}
+        />
       </div>
 
       {/* Time to close + avg duration */}

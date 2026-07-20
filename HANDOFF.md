@@ -49,12 +49,11 @@
 - `sql/2026-07-17-pipeline-9-stages.sql` — check `pipeline_stage` 1..9 + remapea el
   viejo stage 8 (Completed) → 7.
 
-### 🗄️ SQL PENDIENTE (2026-07-19 — Eduardo debe correrlos)
-- **`sql/2026-07-19-alerts.sql`** — tablas `alerts` + `alert_messages` (avisos
-  manager→comercial). Resiliente: sin ellas la campana sale vacía y no rompe.
-- **`sql/2026-07-19-project-status-lost.sql`** — amplía el check de `projects.status`
-  para admitir `'lost'` (los 4 estados). Sin correrlo, guardar un proyecto como Lost falla.
-- (Ya aplicado) `sql/2026-07-18-project-stage-dates.sql` — `stage_changed_at`/`closed_at`.
+### 🗄️ SQL PENDIENTE (2026-07-20 — Eduardo debe correrlo)
+- **`sql/2026-07-20-payment-plan.sql`** — columna `quotes.payment_plan jsonb` (plan de
+  pagos esperado). Resiliente: sin ella el overdue cae al criterio por antigüedad.
+- (Ya aplicados) `sql/2026-07-19-alerts.sql`, `sql/2026-07-19-project-status-lost.sql`,
+  `sql/2026-07-18-project-stage-dates.sql`.
 
 ### ✅ Hecho 2026-07-18 (desplegado; falta solo correr el SQL de arriba)
 - **Filtro por mes en el Pipeline** (punto 1): selector "Captured" arriba del Kanban;
@@ -132,6 +131,23 @@
   `budget` si aún no hay cotización. **Lost → 0/0**. Completed → su valor en Portfolio.
   Stats arriba (Portfolio verde, Pending ámbar) + columnas en tabla y tarjetas móvil.
 - Lo de "no inflar con la suma de dos cotizaciones" queda resuelto: Pending usa el mínimo.
+
+### ✅ Hecho 2026-07-20 — Plan de pagos esperado + fix calendario (desplegado; falta SQL)
+- **Fix calendario:** la cabecera mostraba solo "Today" entre las flechas → ahora muestra
+  **mes + año** navegable y "Today" es botón aparte.
+- **Plan de pagos esperado** (fecha + importe por plazo) en la cotización aceptada
+  (`quotes.payment_plan jsonb`). Helper `paymentPlanStatus`/`suggestedPaymentPlan` +
+  `projectValue` ya existentes. Acción `setPaymentPlan`. UI en el PaymentsPanel
+  (`QuotesSection.tsx`): editar plazos, sugerir desde el saldo, ver Paid/Overdue/Pending.
+- **Overdue ahora es plan-aware** (5 superficies, regla de Eduardo):
+  - **Collections:** `Receivable.overdueAmount/hasPlan/nextDueDate`; `collectionsSummary`
+    usa `overdueAmount`. Con plan → overdue = plazos vencidos sin cubrir; sin plan →
+    antigüedad >30d (fallback). Filtros/KPI "Overdue" actualizados.
+  - **Calendario:** panel "Expected payments this month" (por mes navegado), pagos
+    vencidos en rojo. `getCollections` devuelve `expectedPayments`.
+  - **Dashboard:** `ExpectedIncomeCard` (previsión por mes + overdue) en managers Y sales.
+  - **Email 9am:** sección de pagos a cobrar (vencidos/hoy); se envía aunque no haya
+    follow-ups. `ExpectedDue` en `lib/email.ts`, unión en el cron.
 
 ### 🔜 A DESARROLLAR (siguiente)
 - Los 4 puntos originales del roadmap (filtro pipeline, cierre/Cleanup, captado-vs-cerrado,

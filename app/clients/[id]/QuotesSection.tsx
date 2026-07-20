@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import {
   quoteTotals,
   paymentSummary,
+  paymentPlanStatus,
+  suggestedPaymentPlan,
   PAYMENT_METHODS,
   PAYMENT_MILESTONES,
   type Quote,
@@ -12,6 +14,7 @@ import {
   type Payment,
   type PaymentMethod,
   type PaymentStatus,
+  type PaymentPlanItem,
 } from "@/lib/data";
 import {
   createQuote,
@@ -24,6 +27,7 @@ import {
   createInvoice,
   attachPaymentReceipt,
   removePaymentReceipt,
+  setPaymentPlan,
 } from "@/app/actions";
 import { AttachmentControl } from "./AttachmentControl";
 
@@ -132,6 +136,7 @@ function PaymentsPanel({
   onAdd,
   onUpdate,
   onDelete,
+  onSavePlan,
   onInvoice,
   onAttachReceipt,
   onRemoveReceipt,
@@ -155,6 +160,7 @@ function PaymentsPanel({
       note: string;
     }
   ) => Promise<void>;
+  onSavePlan: (items: PaymentPlanItem[]) => Promise<void>;
   onInvoice: () => Promise<string>;
   onAttachReceipt: (paymentId: string, file: File) => Promise<void>;
   onRemoveReceipt: (paymentId: string, path: string) => Promise<void>;
@@ -170,6 +176,37 @@ function PaymentsPanel({
   const [milestone, setMilestone] = useState<string>("First payment");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Expected payment plan (tentative dates + amounts).
+  const today = new Date().toISOString().slice(0, 10);
+  const plan = paymentPlanStatus(quote.paymentPlan, paid, today);
+  const [planEditing, setPlanEditing] = useState(false);
+  const [planItems, setPlanItems] = useState<PaymentPlanItem[]>(quote.paymentPlan);
+  const [planBusy, setPlanBusy] = useState(false);
+
+  function openPlanEdit() {
+    setPlanItems(
+      quote.paymentPlan.length > 0
+        ? quote.paymentPlan
+        : suggestedPaymentPlan(balance, today)
+    );
+    setPlanEditing(true);
+  }
+  function patchPlanRow(id: string, patch: Partial<PaymentPlanItem>) {
+    setPlanItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  }
+  async function savePlanNow() {
+    if (planBusy) return;
+    setPlanBusy(true);
+    try {
+      await onSavePlan(planItems);
+      setPlanEditing(false);
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+  const fmtD = (d: string) =>
+    d ? new Date(d + "T00:00:00").toLocaleDateString("en-AE", { day: "numeric", month: "short" }) : "—";
 
   // Suggests the next milestone: ordinal by count, or "Final payment" once we
   // run out of ordinals (user can always change it).
@@ -292,6 +329,140 @@ function PaymentsPanel({
           </span>
           <span className="text-(--text-muted)">{100 - pctPaid}% pending</span>
         </div>
+      </div>
+
+      {/* Expected payment plan */}
+      <div className="mb-3 rounded-md border border-(--border) bg-(--surface) p-2.5">
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold text-(--text-muted) uppercase tracking-widest">
+              Expected payments
+            </span>
+            {plan.overdue > 0.5 ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                {money(plan.overdue)} overdue
+              </span>
+            ) : plan.nextDate ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-(--accent)/10 text-(--accent) border border-(--accent)/20">
+                Next: {money(plan.nextAmount)} · {fmtD(plan.nextDate)}
+              </span>
+            ) : null}
+          </div>
+          {!planEditing && (
+            <button
+              type="button"
+              onClick={openPlanEdit}
+              className="text-[11px] font-medium text-(--accent) hover:underline"
+            >
+              {quote.paymentPlan.length > 0 ? "Edit plan" : "Set up"}
+            </button>
+          )}
+        </div>
+
+        {planEditing ? (
+          <div className="flex flex-col gap-2">
+            {planItems.map((it) => (
+              <div key={it.id} className="flex items-center gap-1.5 flex-wrap">
+                <input
+                  type="text"
+                  value={it.label}
+                  onChange={(e) => patchPlanRow(it.id, { label: e.target.value })}
+                  placeholder="Label"
+                  className={`${INPUT} !py-1.5 !text-xs flex-1 min-w-[90px]`}
+                />
+                <input
+                  type="date"
+                  value={it.expectedDate}
+                  onChange={(e) => patchPlanRow(it.id, { expectedDate: e.target.value })}
+                  className={`${INPUT} !py-1.5 !text-xs w-[130px]`}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  value={it.amount || ""}
+                  onChange={(e) => patchPlanRow(it.id, { amount: Number(e.target.value) || 0 })}
+                  placeholder="AED"
+                  className={`${INPUT} !py-1.5 !text-xs w-[90px]`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPlanItems((p) => p.filter((x) => x.id !== it.id))}
+                  className="text-(--text-muted) hover:text-red-500 text-xs px-1"
+                  aria-label="Remove installment"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() =>
+                  setPlanItems((p) => [
+                    ...p,
+                    { id: `pp_${Date.now()}`, label: "Payment", expectedDate: today, amount: 0 },
+                  ])
+                }
+                className="text-[11px] font-medium text-(--accent) hover:underline"
+              >
+                + Add installment
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanItems(suggestedPaymentPlan(balance, today))}
+                className="text-[11px] font-medium text-(--text-muted) hover:text-(--text-primary)"
+              >
+                Suggest from balance
+              </button>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlanEditing(false)}
+                  className="text-[11px] text-(--text-muted) hover:text-(--text-primary)"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={savePlanNow}
+                  disabled={planBusy}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-(--accent) text-white dark:text-black disabled:opacity-50"
+                >
+                  Save plan
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : quote.paymentPlan.length === 0 ? (
+          <p className="text-[11px] text-(--text-muted)">
+            No plan yet — set tentative dates so overdue only shows once a payment is
+            actually due.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {plan.lines.map((l) => (
+              <li key={l.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-(--text-secondary) min-w-0 truncate">
+                  {fmtD(l.expectedDate)} · {l.label}
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="font-mono text-(--text-muted)">{money(l.amount)}</span>
+                  {l.paidFull ? (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      Paid
+                    </span>
+                  ) : l.past ? (
+                    <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">
+                      Overdue
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-(--text-muted)">Pending</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Payment list */}
@@ -540,6 +711,14 @@ export function QuotesSection({
     );
   }
 
+  async function savePlan(q: Quote, items: PaymentPlanItem[]) {
+    // Optimistic: update the plan in place, then persist.
+    setQuotes((prev) =>
+      prev.map((x) => (x.id === q.id ? { ...x, paymentPlan: items } : x))
+    );
+    await setPaymentPlan(clientId, q.id, items);
+  }
+
   async function updatePay(
     q: Quote,
     paymentId: string,
@@ -746,6 +925,7 @@ export function QuotesSection({
                     onAdd={(fields) => addPay(q, fields)}
                     onUpdate={(paymentId, fields) => updatePay(q, paymentId, fields)}
                     onDelete={(paymentId) => removePay(q, paymentId)}
+                    onSavePlan={(items) => savePlan(q, items)}
                     onInvoice={() => makeInvoice(q)}
                     onAttachReceipt={(paymentId, file) =>
                       attachReceipt(q, paymentId, file)
