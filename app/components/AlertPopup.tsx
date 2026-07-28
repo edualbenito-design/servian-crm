@@ -35,7 +35,7 @@ export function AlertPopup({ alerts }: { alerts: AlertInbox[] }) {
   if (!show || unread.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={dismiss}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 print:hidden" onClick={dismiss}>
       <div
         className="w-full max-w-md rounded-2xl border border-(--border) bg-(--card) shadow-2xl shadow-black/50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}

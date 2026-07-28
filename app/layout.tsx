@@ -77,7 +77,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-(--background) text-(--text-primary) antialiased">
         {profile && (
           <header
-            className="border-b border-(--border) bg-(--surface) sticky top-0 z-40"
+            className="border-b border-(--border) bg-(--surface) sticky top-0 z-40 print:hidden"
             style={{ paddingTop: "env(safe-area-inset-top)" }}
           >
             <div
@@ -131,7 +131,7 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         {profile && <AlertPopup alerts={alerts} />}
         {profile && (
-          <footer className="border-t border-(--border) bg-(--surface)">
+          <footer className="border-t border-(--border) bg-(--surface) print:hidden">
             <div className="max-w-7xl mx-auto px-6 h-10 flex items-center">
               <p className="text-xs text-(--text-muted)">
                 &copy; 2026 Servian Contracting. All rights reserved.

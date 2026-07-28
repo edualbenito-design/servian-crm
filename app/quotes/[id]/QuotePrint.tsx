@@ -59,6 +59,10 @@ export function QuotePrint({
 
   return (
     <div className="min-h-screen bg-zinc-100 py-6 print:bg-white print:py-0">
+      {/* Zero page margins so the browser drops its own date/title/URL/page-number
+          header & footer. The document keeps its own inner padding below. */}
+      <style>{`@media print { @page { margin: 0; } html, body { background: #fff; } }`}</style>
+
       {/* Toolbar (hidden when printing) */}
       <div className="max-w-3xl mx-auto px-4 mb-4 flex items-center justify-between print:hidden">
         <a href="javascript:history.back()" className="text-sm text-zinc-500 hover:text-zinc-800">
@@ -75,7 +79,7 @@ export function QuotePrint({
       </div>
 
       {/* A4 document */}
-      <div className="max-w-3xl mx-auto bg-white text-zinc-800 shadow-lg print:shadow-none p-10 print:p-8">
+      <div className="max-w-3xl mx-auto bg-white text-zinc-800 shadow-lg print:shadow-none p-10 print:px-12 print:py-14">
         {/* Header: logo left, QUOTATION right */}
         <div className="flex items-start justify-between mb-2">
           <div>
