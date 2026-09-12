@@ -9,9 +9,12 @@ export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Sync to the theme the anti-flash script already applied — must be post-mount
+    // (reads the DOM) to stay SSR-hydration-safe.
     const current = document.documentElement.classList.contains("dark")
       ? "dark"
       : "light";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(current);
     setMounted(true);
   }, []);

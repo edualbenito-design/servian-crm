@@ -20,7 +20,10 @@ export function AlertPopup({ alerts }: { alerts: AlertInbox[] }) {
     try {
       seen = sessionStorage.getItem(SEEN_KEY) ?? "";
     } catch {}
+    // Must run post-mount: reads sessionStorage, which is client-only (SSR-safe).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (newest > seen) setShow(true);
+    // Intentionally once-per-mount (nudge on app open), not on every alert change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

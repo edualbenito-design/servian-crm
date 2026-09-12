@@ -10,10 +10,11 @@ export const COMPANY = {
   trn: "",
   bank: {
     name: "WIO Bank",
-    accountName: "Servian Contracting L.L.C",
+    accountName: "SERVIAN CONTRACTING L.L.C",
     accountNumber: "9056189835",
-    iban: "AE75 0600 0000 0000 0561 8983 5",
+    iban: "AE75 0860 0000 0905 6189 835",
     bic: "WIOBAEADXXX",
+    address: "Etihad Airways Centre, 5th Floor, Abu Dhabi, UAE",
     currency: "AED",
   },
   // Brand accent used on documents (gold).

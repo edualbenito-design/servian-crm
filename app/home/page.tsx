@@ -82,6 +82,19 @@ export default async function HomePage() {
         </p>
       </div>
 
+      {/* What's new */}
+      <Link
+        href="/whats-new"
+        className="group mb-8 flex items-center gap-3 rounded-xl border border-(--accent)/30 bg-(--accent)/[0.06] px-4 py-3 hover:bg-(--accent)/10 transition-colors"
+      >
+        <span className="text-lg leading-none" aria-hidden>✨</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-(--text-primary)">What&rsquo;s new in your CRM</p>
+          <p className="text-xs text-(--text-muted)">Alerts, payment plans, Cleanup and more — take the quick tour.</p>
+        </div>
+        <span className="ml-auto text-(--accent) group-hover:translate-x-0.5 transition-transform">→</span>
+      </Link>
+
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Stat label="Clients" value={String(clients.length)} />

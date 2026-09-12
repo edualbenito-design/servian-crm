@@ -32,6 +32,25 @@ import { FilesSection } from "./FilesSection";
 import { AlertsPanel } from "./AlertsPanel";
 import { WhatsAppMenu } from "@/app/components/WhatsAppMenu"; // WhatsApp with message templates
 
+// ─── optimistic-UI helpers (module scope: kept out of render) ──────────────────
+function newOptimisticId(prefix = "optimistic"): string {
+  return `${prefix}_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+}
+function isoNow(): string {
+  return new Date().toISOString();
+}
+function isoToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+// Builds an optimistic activity entry (pure factory — only uses its args).
+function makeActivity(
+  type: ActivityType,
+  description: string,
+  projectId: string | null = null
+): Activity {
+  return { id: newOptimisticId(), type, description, createdAt: isoNow(), projectId };
+}
+
 // ─── form types ───────────────────────────────────────────────────────────────
 
 type ClientForm = {
@@ -80,7 +99,7 @@ const EMPTY_PROJECT: ProjectForm = {
   budget: "",
   status: "", // force the commercial to choose Active/On hold/Completed/Lost
   pipelineStage: "1",
-  startDate: new Date().toISOString().slice(0, 10),
+  startDate: "", // filled with today when the Add form opens (see openAddProject)
   endDate: "",
   contractor: "",
   teamMembers: "",
@@ -249,7 +268,9 @@ function Modal({
 }) {
   // Keep a stable ref so the keydown listener never goes stale
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -782,6 +803,8 @@ function ProjectCard({
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.hash === `#project-${project.id}`) {
+      // Deep-link open must run post-mount to stay SSR-hydration-safe.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(true);
       cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -1500,21 +1523,6 @@ export function ClientDetail({
     initialClient.activities ?? []
   );
 
-  // Build an optimistic activity entry.
-  function makeActivity(
-    type: ActivityType,
-    description: string,
-    projectId: string | null = null
-  ): Activity {
-    return {
-      id: `optimistic_${Date.now()}_${Math.random()}`,
-      type,
-      description,
-      createdAt: new Date().toISOString(),
-      projectId,
-    };
-  }
-
   // Prepend to the client-level history.
   function pushClientActivity(type: ActivityType, description: string) {
     setActivities((prev) => [makeActivity(type, description), ...prev]);
@@ -1661,13 +1669,13 @@ export function ClientDetail({
     note: string
   ) {
     const optimistic: FollowUp = {
-      id: `optimistic_${Date.now()}_${Math.random()}`,
+      id: newOptimisticId(),
       clientId: client.id,
       projectId,
       dueDate,
       note: note.trim() || undefined,
       status: "pending",
-      createdAt: new Date().toISOString(),
+      createdAt: isoNow(),
     };
     updateFollowUpList(projectId, (list) => [...list, optimistic]);
     pushFollowUpActivity(
@@ -1816,7 +1824,8 @@ export function ClientDetail({
   // ── project modal ───────────────────────────────────────────────────────────
 
   function openAddProject() {
-    setPf(EMPTY_PROJECT);
+    // Prefill today as the start date (EMPTY_PROJECT has no date so it can't go stale).
+    setPf({ ...EMPTY_PROJECT, startDate: isoToday() });
     setPfError(false);
     setProjectModal({ mode: "add" });
   }
@@ -1844,13 +1853,13 @@ export function ClientDetail({
 
     if (projectModal.mode === "add") {
       const optimistic: Project = {
-        id: `optimistic_${Date.now()}`,
+        id: newOptimisticId(),
         name: pf.name.trim() || "Untitled Project",
         description: pf.description.trim(),
         budget: Math.max(0, Number(pf.budget) || 0),
         status: reconciled.status,
         pipelineStage: reconciled.stage,
-        startDate: pf.startDate || new Date().toISOString().slice(0, 10),
+        startDate: pf.startDate || isoToday(),
         endDate: pf.endDate || undefined,
         activities: [makeActivity("project_created", "Project created")],
         contractor: pf.contractor.trim() || undefined,
@@ -1885,7 +1894,7 @@ export function ClientDetail({
                 budget: Math.max(0, Number(pf.budget) || 0),
                 status: reconciled.status,
                 pipelineStage: reconciled.stage,
-                startDate: pf.startDate || new Date().toISOString().slice(0, 10),
+                startDate: pf.startDate || isoToday(),
                 endDate: pf.endDate || undefined,
                 contractor: pf.contractor.trim() || undefined,
                 teamMembers: parseLines(pf.teamMembers),

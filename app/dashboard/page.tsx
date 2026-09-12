@@ -17,6 +17,7 @@ import { CloseTimeCard } from "./CloseTimeCard";
 import { ExpectedIncomeCard } from "./ExpectedIncomeCard";
 import { MonthPicker } from "./MonthPicker";
 import { MonthlyReportView } from "./MonthlyReportView";
+import { ReportExport } from "./ReportExport";
 
 function monthLabel(key: string): string {
   const [y, m] = key.split("-").map(Number);
@@ -90,13 +91,18 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
         <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-(--text-primary) tracking-tight">
-              Dashboard
+              Servian Contracting — {monthLabel(month)}
             </h1>
             <p className="mt-1 text-sm text-(--text-secondary)">
-              What happened in {monthLabel(month)}
+              Monthly activity report
             </p>
           </div>
-          <MonthPicker months={reportMonths} value={month} />
+          <div className="flex items-center gap-3 flex-wrap">
+            <ReportExport report={report} />
+            <span className="print:hidden">
+              <MonthPicker months={reportMonths} value={month} />
+            </span>
+          </div>
         </div>
         <MonthlyReportView report={report} />
       </div>
@@ -105,10 +111,13 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
 
   // Commercials get their own personal dashboard (only their data).
   if (profile && !profile.isManager) {
-    const myClients = await getClients(profile.name);
-    const myQuoteStats = await getQuoteStats(profile.name);
-    const myMovement = await getMonthlyMovement(profile.name);
-    const { expectedPayments: myExpected } = await getCollections(profile.name);
+    const [myClients, myQuoteStats, myMovement, myCollections] = await Promise.all([
+      getClients(profile.name),
+      getQuoteStats(profile.name),
+      getMonthlyMovement(profile.name),
+      getCollections(profile.name),
+    ]);
+    const { expectedPayments: myExpected } = myCollections;
     return (
       <SalesDashboard
         clients={myClients}
@@ -121,10 +130,14 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
     );
   }
 
-  const clients = await getClients();
-  const quoteStats = await getQuoteStats();
-  const movement = await getMonthlyMovement();
-  const { expectedPayments } = await getCollections();
+  // Independent reads → fetch in parallel so the page paints sooner.
+  const [clients, quoteStats, movement, collections] = await Promise.all([
+    getClients(),
+    getQuoteStats(),
+    getMonthlyMovement(),
+    getCollections(),
+  ]);
+  const { expectedPayments } = collections;
   const conversion = conversionFunnel(clients);
 
   const kpis = computeKpis(clients);

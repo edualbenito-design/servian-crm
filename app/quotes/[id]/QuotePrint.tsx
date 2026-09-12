@@ -65,9 +65,17 @@ export function QuotePrint({
 
       {/* Toolbar (hidden when printing) */}
       <div className="max-w-3xl mx-auto px-4 mb-4 flex items-center justify-between print:hidden">
-        <a href="javascript:history.back()" className="text-sm text-zinc-500 hover:text-zinc-800">
+        <button
+          type="button"
+          onClick={() => {
+            // Invoices open in a new tab (no history) → close it; otherwise go back.
+            if (window.history.length > 1) window.history.back();
+            else window.close();
+          }}
+          className="text-sm text-zinc-500 hover:text-zinc-800"
+        >
           ← Back
-        </a>
+        </button>
         <button
           type="button"
           onClick={() => window.print()}
@@ -280,6 +288,10 @@ export function QuotePrint({
             <p>
               <span className="text-zinc-500">BIC:</span>{" "}
               <strong>{COMPANY.bank.bic}</strong>
+            </p>
+            <p>
+              <span className="text-zinc-500">Bank Address:</span>{" "}
+              {COMPANY.bank.address}
             </p>
             <p>
               <span className="text-zinc-500">Currency:</span>{" "}

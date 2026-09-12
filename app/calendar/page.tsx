@@ -6,9 +6,13 @@ import { CalendarView } from "./CalendarView";
 export default async function CalendarPage() {
   const profile = await getCurrentProfile();
   const scope = profile?.isManager ? undefined : profile?.name;
-  const agenda = await getFollowUpAgenda(scope);
-  const alerts = await getAdvanceAlerts(scope);
-  const { expectedPayments } = await getCollections(scope);
+  // Independent reads → parallel.
+  const [agenda, alerts, collections] = await Promise.all([
+    getFollowUpAgenda(scope),
+    getAdvanceAlerts(scope),
+    getCollections(scope),
+  ]);
+  const { expectedPayments } = collections;
 
   // Pending tasks show on their due day; done ones on the day they were done.
   const pending = agenda
