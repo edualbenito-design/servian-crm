@@ -309,17 +309,23 @@ export function suggestedPaymentPlan(balance: number, today: string): PaymentPla
   ];
 }
 
+// Today's calendar date in Dubai (UTC+4, no DST), as YYYY-MM-DD. Independent of
+// where this runs (Vercel is UTC; toISOString is UTC too), so "today/overdue"
+// never drifts a day for the team.
+export function dubaiToday(): string {
+  return new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 export type FollowUpState = "overdue" | "today" | "upcoming" | "none";
 
-// Compares a follow-up date to today (local date, ignoring time).
+// Compares a follow-up date to today (Dubai calendar date), by string.
 export function followUpState(dateStr?: string): FollowUpState {
   if (!dateStr) return "none";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr + "T00:00:00");
-  if (isNaN(d.getTime())) return "none";
-  if (d.getTime() < today.getTime()) return "overdue";
-  if (d.getTime() === today.getTime()) return "today";
+  const d = dateStr.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "none";
+  const today = dubaiToday();
+  if (d < today) return "overdue";
+  if (d === today) return "today";
   return "upcoming";
 }
 

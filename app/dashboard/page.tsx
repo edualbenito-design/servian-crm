@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { getClients, getQuoteStats, getMonthlyMovement, getReportMonths, getMonthlyReport, getCollections } from "@/lib/db";
+import { collectionsSummary } from "@/lib/collections";
 import { getCurrentProfile } from "@/lib/auth";
 import {
   computeKpis,
@@ -118,6 +120,7 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
       getCollections(profile.name),
     ]);
     const { expectedPayments: myExpected } = myCollections;
+    const myOverdue = collectionsSummary(myCollections.receivables);
     return (
       <SalesDashboard
         clients={myClients}
@@ -125,6 +128,8 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
         quoteStats={myQuoteStats}
         movement={myMovement}
         expected={myExpected.map((e) => ({ date: e.date, amount: e.amount }))}
+        overdueAmount={myOverdue.overdueAmount}
+        overdueCount={myOverdue.overdueCount}
         monthPicker={<MonthPicker months={reportMonths} value="" />}
       />
     );
@@ -147,6 +152,7 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
   const commercials = performanceByCommercial(clients);
   const durations = durationBySize(clients);
   const close = closeTimes(clients);
+  const overdue = collectionsSummary(collections.receivables);
 
   const maxMonth = Math.max(1, ...months.map((m) => m.count));
   const maxFunnel = Math.max(1, ...funnel.map((f) => f.count));
@@ -169,6 +175,24 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
         </div>
         <MonthPicker months={reportMonths} value="" />
       </div>
+
+      {overdue.overdueAmount > 0.5 && (
+        <Link
+          href="/collections"
+          className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 dark:border-red-800/60 bg-red-50 dark:bg-red-900/20 px-4 py-3 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 shrink-0"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /><path d="M12 9v4M12 17h.01" /></svg>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+              AED {num(overdue.overdueAmount)} overdue to collect
+            </p>
+            <p className="text-xs text-red-600/80 dark:text-red-400/80">
+              {overdue.overdueCount} receivable{overdue.overdueCount === 1 ? "" : "s"} past due — open Collections to chase them.
+            </p>
+          </div>
+          <span className="ml-auto text-red-500">→</span>
+        </Link>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

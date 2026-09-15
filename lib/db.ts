@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase/server";
-import { quoteTotals, paymentSummary, paymentPlanStatus, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, COLD_DAYS } from "./data";
+import { quoteTotals, paymentSummary, paymentPlanStatus, nextPendingFollowUp, advanceAlert, isCompletedStage, isWonStage, isDeadStage, isOpenStage, daysSince, dubaiToday, COLD_DAYS } from "./data";
 import type { Client, Project, Activity, ActivityType, Quote, QuoteStatus, QuoteItem, Payment, PaymentMethod, PaymentStatus, PaymentPlanItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertStatus, AlertRole } from "./data";
 
 type DbQuote = {
@@ -721,7 +721,7 @@ export async function getCollections(assignedTo?: string): Promise<Collections> 
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayStr = dubaiToday();
   const AGE_OVERDUE_DAYS = 30; // fallback when there's no payment plan
   const receivables: Receivable[] = [];
   const expectedPayments: ExpectedPayment[] = [];
@@ -1044,7 +1044,7 @@ export async function getMonthlyMovement(
 
   // Overdue = still-pending follow-ups whose due date is already past. Bucketed
   // by their due month so an old month keeps flagging until the work is done.
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = dubaiToday();
   if (inScopeClient.size > 0) {
     const { data: fus } = await db
       .from("follow_ups")
@@ -1869,7 +1869,7 @@ export async function getMonthlyReport(month: string, assignedTo?: string): Prom
 
   // Overdue = follow-ups due in the month, still pending and already past.
   if (clientIds.size > 0) {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = dubaiToday();
     const { data: fus } = await db
       .from("follow_ups")
       .select("client_id, due_date, status")

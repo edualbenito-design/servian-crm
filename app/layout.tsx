@@ -6,6 +6,7 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { LogoLockup } from "./components/Logo";
 import { AlertBell } from "./components/AlertBell";
 import { AlertPopup } from "./components/AlertPopup";
+import { GlobalSearch } from "./components/GlobalSearch";
 import { getCurrentProfile } from "@/lib/auth";
 import { getAlertsForUser } from "@/lib/db";
 import { signOut } from "./login/actions";
@@ -99,6 +100,7 @@ export default async function RootLayout({
               <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 <NavLinks isManager={profile.isManager} />
                 <div className="hidden sm:block w-px h-5 bg-(--border) mx-1" />
+                <GlobalSearch />
                 <AlertBell alerts={alerts} />
                 <ThemeToggle />
 

@@ -346,6 +346,41 @@ export async function createClient(fields: ClientFields): Promise<string> {
   return data.id;
 }
 
+export interface ClientSearchResult {
+  id: string;
+  name: string;
+  phone: string;
+  location: string;
+  assignedTo: string;
+}
+
+// Global search: find clients by name or phone, scoped to what the caller may
+// see (managers → everyone; a salesperson → only their own clients).
+export async function searchClients(query: string): Promise<ClientSearchResult[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+  const term = query.trim();
+  if (term.length < 2) return [];
+
+  const db = serverClient();
+  let sel = db.from("clients").select("id, name, phone, location, assigned_to, deleted_at");
+  if (!profile.isManager) sel = sel.eq("assigned_to", profile.name);
+  const { data } = await sel;
+
+  const lower = term.toLowerCase();
+  const digits = term.replace(/\D/g, "");
+  const rows = (data as { id: string; name: string; phone: string | null; location: string | null; assigned_to: string; deleted_at: string | null }[] | null) ?? [];
+  return rows
+    .filter((c) => !c.deleted_at)
+    .filter((c) => {
+      const nameHit = String(c.name ?? "").toLowerCase().includes(lower);
+      const phoneHit = digits.length >= 3 && String(c.phone ?? "").replace(/\D/g, "").includes(digits);
+      return nameHit || phoneHit;
+    })
+    .slice(0, 10)
+    .map((c) => ({ id: c.id, name: c.name, phone: c.phone ?? "", location: c.location ?? "", assignedTo: c.assigned_to }));
+}
+
 // Non-blocking duplicate check when adding a client: a client counts as a
 // duplicate only if the SAME phone number is already registered (names can
 // legitimately repeat). Matches on the last 9 digits so +971 50… and 050… match.

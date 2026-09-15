@@ -6,6 +6,7 @@ import {
   paymentSummary,
   paymentPlanStatus,
   suggestedPaymentPlan,
+  dubaiToday,
   PAYMENT_METHODS,
   PAYMENT_MILESTONES,
   type Quote,
@@ -67,6 +68,50 @@ function money(n: number) {
   }).format(n);
 }
 
+// Money input that shows thousands separators when idle (e.g. "24,400") and the
+// raw number while editing, so long amounts stay readable without cursor jumps.
+function MoneyInput({
+  value,
+  onChange,
+  className,
+  placeholder,
+  autoFocus,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  className?: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [text, setText] = useState("");
+  const display = focused
+    ? text
+    : value
+      ? value.toLocaleString("en-US")
+      : "";
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      value={display}
+      onFocus={() => {
+        setText(value ? String(value) : "");
+        setFocused(true);
+      }}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^0-9.]/g, "");
+        setText(raw);
+        onChange(Number(raw) || 0);
+      }}
+    />
+  );
+}
+
 const paymentStatusStyle: Record<PaymentStatus, string> = {
   unpaid:
     "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/50",
@@ -110,7 +155,7 @@ type Form = {
 
 function emptyForm(): Form {
   return {
-    issueDate: new Date().toISOString().slice(0, 10),
+    issueDate: dubaiToday(),
     validUntil: "",
     vatRate: 5,
     discountPct: 0,
@@ -174,13 +219,13 @@ function PaymentsPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
-  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
+  const [paidOn, setPaidOn] = useState(dubaiToday());
   const [milestone, setMilestone] = useState<string>("First payment");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Expected payment plan (tentative dates + amounts).
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dubaiToday();
   const plan = paymentPlanStatus(quote.paymentPlan, paid, today);
   const [planEditing, setPlanEditing] = useState(false);
   const [planItems, setPlanItems] = useState<PaymentPlanItem[]>(quote.paymentPlan);
@@ -222,7 +267,7 @@ function PaymentsPanel({
     setEditingId(null);
     setAmount(balance > 0 ? String(Math.round(balance)) : "");
     setMethod("bank");
-    setPaidOn(new Date().toISOString().slice(0, 10));
+    setPaidOn(dubaiToday());
     // If this payment clears the balance, default to "Final payment".
     setMilestone(willSettle ? "Final payment" : suggestMilestone());
     setNote("");
@@ -533,7 +578,7 @@ function PaymentsPanel({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
               <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Amount (AED)</label>
-              <input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className={INPUT} placeholder="0" autoFocus />
+              <MoneyInput value={Number(amount) || 0} onChange={(n) => setAmount(n ? String(n) : "")} className={INPUT} placeholder="0" autoFocus />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-(--text-muted) mb-1">Milestone</label>
@@ -1033,11 +1078,9 @@ export function QuotesSection({
                         className={INPUT}
                         placeholder="Qty"
                       />
-                      <input
-                        type="number"
-                        min="0"
+                      <MoneyInput
                         value={it.unitPrice}
-                        onChange={(e) => setItem(i, { unitPrice: Number(e.target.value) })}
+                        onChange={(n) => setItem(i, { unitPrice: n })}
                         className={INPUT}
                         placeholder="Price"
                       />
