@@ -10,6 +10,30 @@
 
 ## 0. Estado más reciente (2026-07-17) y próximos pasos
 
+### ✅ Sesión 2026-09 (todo en producción, sin SQL pendiente)
+- **⚠️ Deploy Vercel:** el repo está en Vercel **Hobby** dentro del team "servian".
+  Hobby+repo privado **bloquea** los deploys de commits de Claude → se puso el **repo
+  PÚBLICO** (no hay secretos; `.env` gitignored) y así auto-despliega. Si algún día
+  quieren privado: mover el proyecto a la cuenta personal o Pro. Ver
+  [[project-servian-vercel-git-author]]. Firmar commits como owner
+  (`edualbenito-design`, email noreply de GitHub) también ayuda.
+- **Auditoría + arreglos:** añadida `assertCanAccessClient` a 9 acciones que escribían
+  sin comprobar acceso (updateClient, create/update project+stage, notas,
+  create/update/setStatus/delete quote). `nextQuoteNumber/nextInvoiceNumber` usaban el
+  COUNT (reutilizaban número al borrar) → ahora el máximo emitido. Smoke test por rol OK.
+- **Datos empresa:** IBAN correcto `AE75 0860 0000 0905 6189 835` + bank address + **TRN
+  `105224079100003`** en `lib/company.ts` (sale en cotización y factura). IVA 5% por defecto.
+- **Features:** (1) enviar cotización por **WhatsApp** con enlace público tokenizado
+  (`lib/quote-link.ts`, proxy deja pasar `/quotes/*?t=`, `getQuoteWhatsAppLink`); (2)
+  **duplicar** cotización (`duplicateQuote`); (3) aviso de **duplicado por teléfono** al
+  crear cliente (`checkPhoneDuplicate`, casa +971/05 por últimos 9 dígitos); (4) **buscador
+  global** ⌘K (`GlobalSearch`+`searchClients`); (5) **MoneyInput** (separadores al escribir);
+  (6) **estado de cuenta PDF** `/clients/[id]/statement`; (7) **banner de cobros vencidos**
+  en Dashboard (manager y sales); (8) **`dubaiToday()`** (UTC+4) para fechas hoy/vencido.
+- **Impresión PDF:** oculta cabecera/pie del CRM + `@page{margin:0}` (sin fecha/URL del
+  navegador). Recordar al equipo: **generar el PDF desde el CRM**, no abrir PDFs guardados.
+
+
 ### ✅ Novedades desde 2026-07-08 (todo en producción)
 - **Email 9am ACTIVADO de verdad:** dominio `serviancontracting.com` verificado en
   Resend (DNS en Namecheap; Eduardo es admin invitado; región Tokyo). `RESEND_FROM`
