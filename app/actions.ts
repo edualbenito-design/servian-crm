@@ -79,6 +79,7 @@ function parseSuppliers(text: string): { name: string; material: string }[] {
 }
 
 export async function updateClient(clientId: string, fields: ClientFields): Promise<void> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   const base = {
     name: fields.name.trim() || undefined,
@@ -345,6 +346,7 @@ export async function createClient(fields: ClientFields): Promise<string> {
 }
 
 export async function createProject(clientId: string, fields: ProjectFields): Promise<Project> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   // Keep status and pipeline stage consistent (Completed→7, Lost→8).
   const { stage, status } = reconcileStageStatus(
@@ -408,6 +410,7 @@ export async function createProject(clientId: string, fields: ProjectFields): Pr
 }
 
 export async function updateProject(projectId: string, clientId: string, fields: ProjectFields): Promise<void> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
 
   // Current stage/close date, to detect an actual pipeline move.
@@ -484,6 +487,8 @@ export async function updatePipelineStage(projectId: string, stage: PipelineStag
     .select("name, client_id, status")
     .eq("id", projectId)
     .single();
+  if (!proj) throw new Error("Project not found.");
+  await assertCanAccessClient(proj.client_id);
 
   // closed_at is sealed the FIRST time a deal reaches an outcome (6/7/8/9) and
   // preserved while moving between outcomes; cleared only when reopened into the
@@ -534,6 +539,7 @@ export async function updatePipelineStage(projectId: string, stage: PipelineStag
 
 // Adds a manual note to the client's general (client-level) history.
 export async function addNote(clientId: string, text: string): Promise<Activity | null> {
+  await assertCanAccessClient(clientId);
   const activity = await logActivity(clientId, "note", text.trim(), null);
   revalidatePath(`/clients/${clientId}`);
   return activity;
@@ -545,6 +551,7 @@ export async function addProjectNote(
   projectId: string,
   text: string
 ): Promise<Activity | null> {
+  await assertCanAccessClient(clientId);
   const activity = await logActivity(clientId, "note", text.trim(), projectId);
   revalidatePath(`/clients/${clientId}`);
   return activity;
@@ -801,10 +808,15 @@ function cleanItems(items: QuoteItem[]): QuoteItem[] {
 async function nextQuoteNumber(): Promise<string> {
   const db = serverClient();
   const year = new Date().getFullYear();
-  const { count } = await db
-    .from("quotes")
-    .select("id", { count: "exact", head: true });
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  // Use the highest sequence ever issued (not the row count) so deleting a quote
+  // never makes the next one REUSE a number — which would duplicate Q-numbers.
+  const { data } = await db.from("quotes").select("number");
+  let max = 0;
+  for (const q of (data as { number: string | null }[] | null) ?? []) {
+    const m = String(q.number ?? "").match(/(\d+)\s*$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const seq = String(max + 1).padStart(4, "0");
   return `Q-${year}-${seq}`;
 }
 
@@ -813,6 +825,7 @@ export async function createQuote(
   projectId: string,
   fields: QuoteFields
 ): Promise<Quote> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   const number = await nextQuoteNumber();
   const pct = Math.min(100, Math.max(0, Number(fields.discountPct) || 0));
@@ -866,6 +879,7 @@ export async function updateQuote(
   quoteId: string,
   fields: QuoteFields
 ): Promise<void> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   const pct = Math.min(100, Math.max(0, Number(fields.discountPct) || 0));
   const base = {
@@ -893,6 +907,7 @@ export async function setQuoteStatus(
   quoteId: string,
   status: QuoteStatus
 ): Promise<{ sentAt?: string; supersededIds: string[] }> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   const sentAt = status === "sent" ? new Date().toISOString() : null;
   const patch: Record<string, unknown> = { status };
@@ -945,6 +960,7 @@ export async function deleteQuote(
   clientId: string,
   quoteId: string
 ): Promise<void> {
+  await assertCanAccessClient(clientId);
   const db = serverClient();
   const { error } = await db.from("quotes").delete().eq("id", quoteId);
   if (error) throw new Error(error.message);
@@ -1080,11 +1096,18 @@ export async function deletePayment(
 async function nextInvoiceNumber(): Promise<string> {
   const db = serverClient();
   const year = new Date().getFullYear();
-  const { count } = await db
+  // Highest issued sequence, not the count (so a deleted/voided one never causes
+  // the next invoice to reuse a number).
+  const { data } = await db
     .from("quotes")
-    .select("id", { count: "exact", head: true })
+    .select("invoice_number")
     .not("invoice_number", "is", null);
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  let max = 0;
+  for (const q of (data as { invoice_number: string | null }[] | null) ?? []) {
+    const m = String(q.invoice_number ?? "").match(/(\d+)\s*$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const seq = String(max + 1).padStart(4, "0");
   return `INV-${year}-${seq}`;
 }
 
