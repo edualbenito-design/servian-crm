@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getQuote, getClient } from "@/lib/db";
 import { getCurrentProfile } from "@/lib/auth";
 import { quoteTotals, paymentSummary } from "@/lib/data";
+import { verifyQuoteToken } from "@/lib/quote-link";
 import { QuotePrint } from "./QuotePrint";
 
 export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
@@ -14,10 +15,14 @@ export default async function QuotePage(props: PageProps<"/quotes/[id]">) {
   const client = await getClient(quote.clientId);
   if (!client) notFound();
 
-  // Non-managers can only view quotes for their own clients.
-  const profile = await getCurrentProfile();
-  if (profile && !profile.isManager && client.assignedTo !== profile.name) {
-    notFound();
+  // A valid share token (WhatsApp link) grants public, read-only access with no
+  // login. Otherwise, non-managers can only view quotes for their own clients.
+  const publicOk = typeof sp?.t === "string" && verifyQuoteToken(id, sp.t);
+  if (!publicOk) {
+    const profile = await getCurrentProfile();
+    if (profile && !profile.isManager && client.assignedTo !== profile.name) {
+      notFound();
+    }
   }
 
   const project = client.projects.find((p) => p.id === quote.projectId);

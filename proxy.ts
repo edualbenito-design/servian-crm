@@ -31,9 +31,13 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isLogin = path.startsWith("/login");
+  // A tokenized quote link (shared with a client over WhatsApp) is public: let it
+  // through so it reaches the page, which verifies the token itself.
+  const isPublicQuote =
+    path.startsWith("/quotes/") && request.nextUrl.searchParams.has("t");
 
-  // Not logged in → force to login (except the login page itself).
-  if (!user && !isLogin) {
+  // Not logged in → force to login (except the login page + public quote links).
+  if (!user && !isLogin && !isPublicQuote) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

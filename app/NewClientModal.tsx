@@ -9,7 +9,7 @@ import {
   type LeadSource,
   type Salesperson,
 } from "@/lib/data";
-import { createClient } from "@/app/actions";
+import { createClient, checkPhoneDuplicate } from "@/app/actions";
 
 const INPUT =
   "w-full bg-(--surface) border border-(--border) rounded-lg px-3 py-2.5 text-sm text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent)/50 focus:ring-1 focus:ring-(--accent)/20 transition-colors";
@@ -85,7 +85,22 @@ export function NewClientButton({
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<Form>(() => emptyForm(presetAssignedTo));
   const [saving, setSaving] = useState(false);
+  const [dup, setDup] = useState<{ name: string; assignedTo: string } | null>(null);
   const closeRef = useRef(() => setOpen(false));
+
+  // Warn (without blocking) if this phone is already registered to a client.
+  useEffect(() => {
+    if (!open) return;
+    const phone = f.phone;
+    const t = setTimeout(async () => {
+      try {
+        setDup(await checkPhoneDuplicate(phone));
+      } catch {
+        setDup(null);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [f.phone, open]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -154,6 +169,18 @@ export function NewClientButton({
                   <input type="email" value={f.email} onChange={(e) => setF((p) => ({ ...p, email: e.target.value }))} className={INPUT} placeholder="email@example.com" />
                 </div>
               </div>
+
+              {dup && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-300/60 dark:border-amber-800/50 bg-amber-50/60 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                    <path d="M12 9v4M12 17h.01" />
+                  </svg>
+                  <span>
+                    This phone is already registered to <strong>{dup.name}</strong> (managed by {dup.assignedTo}). You can still save, but it may be a duplicate.
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className={LABEL}>Location</label>

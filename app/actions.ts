@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { PIPELINE_STAGES, reconcileStageStatus, statusFromStage } from "@/lib/data";
+import { publicQuoteUrl } from "@/lib/quote-link";
 import type { Activity, ActivityType, Project, Quote, QuoteItem, QuoteStatus, Payment, PaymentMethod, PaymentPlanItem, ProjectFile, FileCategory, PropertyType, LeadSource, ProjectStatus, PipelineStage, Salesperson, FollowUp, FollowUpStatus, Milestone, Alert, AlertMessage, AlertRole } from "@/lib/data";
 
 // Records an entry in the client's activity timeline. Best-effort: a logging
@@ -343,6 +344,28 @@ export async function createClient(fields: ClientFields): Promise<string> {
   }
   revalidatePath("/");
   return data.id;
+}
+
+// Non-blocking duplicate check when adding a client: a client counts as a
+// duplicate only if the SAME phone number is already registered (names can
+// legitimately repeat). Matches on the last 9 digits so +971 50… and 050… match.
+export async function checkPhoneDuplicate(
+  phone: string
+): Promise<{ name: string; assignedTo: string } | null> {
+  const profile = await getCurrentProfile();
+  if (!profile) return null;
+  const key = (phone || "").replace(/\D/g, "").slice(-9);
+  if (key.length < 7) return null; // too short to be a real match
+  const db = serverClient();
+  const { data } = await db.from("clients").select("name, phone, assigned_to, deleted_at");
+  for (const c of (data as { name: string; phone: string | null; assigned_to: string; deleted_at: string | null }[] | null) ?? []) {
+    if (c.deleted_at) continue;
+    const cn = String(c.phone ?? "").replace(/\D/g, "").slice(-9);
+    if (cn.length >= 7 && cn === key) {
+      return { name: c.name, assignedTo: c.assigned_to };
+    }
+  }
+  return null;
 }
 
 export async function createProject(clientId: string, fields: ProjectFields): Promise<Project> {
@@ -965,6 +988,91 @@ export async function deleteQuote(
   const { error } = await db.from("quotes").delete().eq("id", quoteId);
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${clientId}`);
+}
+
+// Duplicates a quote as a fresh draft (new number, today's date, no invoice/
+// payments) so a similar quote doesn't have to be rebuilt. Owner or manager.
+export async function duplicateQuote(clientId: string, quoteId: string): Promise<Quote> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { data: src } = await db.from("quotes").select("*").eq("id", quoteId).single();
+  if (!src) throw new Error("Quote not found.");
+
+  const number = await nextQuoteNumber();
+  const base = {
+    project_id: src.project_id,
+    client_id: clientId,
+    number,
+    status: "draft" as const,
+    issue_date: new Date().toISOString().slice(0, 10),
+    valid_until: null,
+    vat_rate: src.vat_rate,
+    notes: src.notes ?? null,
+    items: src.items ?? [],
+  };
+  // Try with discount columns; retry without if they're not there yet.
+  let { data, error } = await db
+    .from("quotes")
+    .insert({ ...base, discount_pct: src.discount_pct ?? null, discount_reason: src.discount_reason ?? null })
+    .select()
+    .single();
+  if (error) {
+    ({ data, error } = await db.from("quotes").insert(base).select().single());
+  }
+  if (error || !data) throw new Error(error?.message ?? "Could not duplicate the quote.");
+
+  await logActivity(clientId, "note", `Quote ${number} created (copy of ${src.number})`, src.project_id);
+  revalidatePath(`/clients/${clientId}`);
+  return {
+    id: data.id,
+    projectId: data.project_id,
+    clientId,
+    number: data.number,
+    status: data.status as QuoteStatus,
+    issueDate: data.issue_date,
+    validUntil: data.valid_until ?? undefined,
+    vatRate: Number(data.vat_rate) || 0,
+    discountPct: data.discount_pct != null ? Number(data.discount_pct) : undefined,
+    discountReason: data.discount_reason ?? undefined,
+    notes: data.notes ?? undefined,
+    items: data.items ?? [],
+    sentAt: data.sent_at ?? undefined,
+    createdAt: data.created_at,
+    payments: [],
+    paymentPlan: [],
+  };
+}
+
+// Builds a WhatsApp link that sends the client a public, read-only link to their
+// quotation (or tax invoice). Owner commercial or manager only.
+export async function getQuoteWhatsAppLink(
+  clientId: string,
+  quoteId: string,
+  variant: "quote" | "invoice" = "quote"
+): Promise<string> {
+  await assertCanAccessClient(clientId);
+  const db = serverClient();
+  const { data: c } = await db
+    .from("clients")
+    .select("name, phone")
+    .eq("id", clientId)
+    .single();
+  const { data: qrow } = await db
+    .from("quotes")
+    .select("number, invoice_number")
+    .eq("id", quoteId)
+    .single();
+
+  const url = publicQuoteUrl(quoteId, variant);
+  const isInvoice = variant === "invoice";
+  const docName = isInvoice
+    ? `tax invoice ${qrow?.invoice_number ?? qrow?.number ?? ""}`.trim()
+    : `quotation ${qrow?.number ?? ""}`.trim();
+  const hello = c?.name ? `Hello ${c.name.split(" ")[0]},` : "Hello,";
+  const message = `${hello}\n\nHere is your ${docName} from Servian Contracting:\n${url}\n\nThank you for your business.`;
+
+  const phone = (c?.phone ?? "").replace(/[^0-9]/g, "");
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
 // ─── Payments & invoices ─────────────────────────────────────────────────────────
